@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Teste Terminal SSH</title>
+    <script src="/socket.io/socket.io.js"></script>
+    <style>
+        body { font-family: monospace; background: #000; color: #0f0; padding: 20px; }
+        #terminal { background: #111; padding: 10px; border: 1px solid #333; height: 400px; overflow-y: auto; }
+        button { padding: 10px; margin: 5px; }
+        input { padding: 5px; width: 300px; }
+    </style>
+</head>
+<body>
+    <h1>Teste Terminal SSH</h1>
+    
+    <div>
+        <button onclick="conectar()">Conectar SSH</button>
+        <button onclick="desconectar()">Desconectar</button>
+        <span id="status">Offline</span>
+    </div>
+    
+    <div>
+        <input type="text" id="comando" placeholder="Digite um comando..." onkeypress="if(event.key==='Enter') enviarComando()">
+        <button onclick="enviarComando()">Enviar</button>
+    </div>
+    
+    <div id="terminal"></div>
+
+    <script>
+        let socket = null;
+        const terminal = document.getElementById('terminal');
+        const status = document.getElementById('status');
+
+        function log(msg) {
+            terminal.innerHTML += msg + '<br>';
+            terminal.scrollTop = terminal.scrollHeight;
+        }
+
+        function conectar() {
+            log('Conectando ao SocketIO...');
+            status.textContent = 'Conectando...';
+            
+            socket = io('/ssh');
+            
+            socket.on('connect', () => {
+                log('SocketIO conectado!');
+                status.textContent = 'SocketIO OK';
+                log('Enviando ssh_start...');
+                socket.emit('ssh_start', { cols: 80, rows: 24 });
+            });
+            
+            socket.on('ssh_ready', () => {
+                log('SSH PRONTO!');
+                status.textContent = 'SSH Conectado';
+            });
+            
+            socket.on('ssh_output', (data) => {
+                log('SSH Output: ' + data.data);
+            });
+            
+            socket.on('ssh_error', (data) => {
+                log('SSH ERRO: ' + data.erro);
+                status.textContent = 'Erro SSH';
+            });
+            
+            socket.on('connect_error', (error) => {
+                log('Erro de conexão: ' + error);
+                status.textContent = 'Erro Conexão';
+            });
+            
+            socket.on('disconnect', () => {
+                log('Desconectado');
+                status.textContent = 'Desconectado';
+            });
+        }
+
+        function desconectar() {
+            if (socket) {
+                socket.disconnect();
+                socket = null;
+            }
+            status.textContent = 'Offline';
+        }
+
+        function enviarComando() {
+            const cmd = document.getElementById('comando').value;
+            if (socket && cmd) {
+                log('Enviando: ' + cmd);
+                socket.emit('ssh_input', { data: cmd + '\n' });
+                document.getElementById('comando').value = '';
+            }
+        }
+    </script>
+</body>
+</html>

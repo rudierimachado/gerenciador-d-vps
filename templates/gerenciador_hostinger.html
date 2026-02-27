@@ -1,0 +1,3296 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gerenciador Hostinger VPS</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+    <link href="https://unpkg.com/xterm@5.4.0/css/xterm.css" rel="stylesheet">
+    <style>
+        :root {
+            --bg-dark: #0f172a;
+            --bg-card: #1e293b;
+            --bg-card-hover: #273449;
+            --accent-blue: #3b82f6;
+            --accent-green: #22c55e;
+            --accent-red: #ef4444;
+            --accent-yellow: #eab308;
+            --accent-purple: #a855f7;
+            --accent-cyan: #06b6d4;
+            --text-primary: #f1f5f9;
+            --text-secondary: #94a3b8;
+            --border-color: #334155;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            background: var(--bg-dark);
+            color: var(--text-primary);
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            min-height: 100vh;
+        }
+
+        .top-bar {
+            background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+            border-bottom: 1px solid var(--border-color);
+            padding: 16px 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            backdrop-filter: blur(10px);
+        }
+
+        .top-bar h1 {
+            font-size: 1.25rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .top-bar h1 i { color: var(--accent-cyan); }
+
+        .status-badge {
+            padding: 6px 14px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .status-badge.online {
+            background: rgba(34, 197, 94, 0.15);
+            color: var(--accent-green);
+            border: 1px solid rgba(34, 197, 94, 0.3);
+        }
+
+        .status-badge.offline {
+            background: rgba(239, 68, 68, 0.15);
+            color: var(--accent-red);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+        }
+
+        .status-badge.checking {
+            background: rgba(234, 179, 8, 0.15);
+            color: var(--accent-yellow);
+            border: 1px solid rgba(234, 179, 8, 0.3);
+        }
+
+        .pulse {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: currentColor;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+
+        .main-container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 24px;
+        }
+
+        .upload-area:hover {
+            border-color: var(--accent-green) !important;
+            background: rgba(34, 197, 94, 0.05);
+        }
+
+        .upload-area.drag-over {
+            border-color: var(--accent-green) !important;
+            background: rgba(34, 197, 94, 0.1);
+            transform: scale(1.02);
+        }
+
+        .deploy-actions {
+            display: flex;
+            gap: 8px;
+        }
+
+        .auth-section .form-grid {
+            margin-bottom: 0;
+        }
+
+        .quick-commands {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 12px;
+            margin-bottom: 20px;
+        }
+
+        .quick-cmd-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 16px;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-align: center;
+        }
+
+        .quick-cmd-card:hover {
+            background: var(--bg-card-hover);
+            border-color: var(--accent-blue);
+            transform: translateY(-2px);
+        }
+
+        .quick-cmd-card i {
+            font-size: 1.5rem;
+            margin-bottom: 8px;
+            display: block;
+        }
+
+        .quick-cmd-card .cmd-title {
+            font-weight: 600;
+            margin-bottom: 4px;
+        }
+
+        .quick-cmd-card .cmd-desc {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+        }
+
+        /* ==================== INTERFACE TIPO WINDOWS ==================== */
+        
+        .sistemas-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+            gap: 20px;
+            padding: 10px;
+        }
+
+        .sistemas-lista {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .sistema-window {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            overflow: hidden;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+
+        .sistema-window:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 8px 25px rgba(0,0,0,0.15);
+            border-color: var(--accent-blue);
+        }
+
+        .sistema-window.rodando {
+            border-left: 4px solid var(--accent-green);
+        }
+
+        .sistema-window.parado {
+            border-left: 4px solid var(--accent-red);
+            opacity: 0.8;
+        }
+
+        .sistema-titlebar {
+            background: linear-gradient(135deg, var(--bg-card-hover) 0%, var(--bg-card) 100%);
+            padding: 12px 16px;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .sistema-title {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            font-weight: 600;
+            font-size: 1rem;
+        }
+
+        .sistema-title i {
+            width: 20px;
+            height: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 4px;
+            font-size: 0.9rem;
+        }
+
+        .sistema-title.rodando i {
+            background: rgba(34, 197, 94, 0.15);
+            color: var(--accent-green);
+        }
+
+        .sistema-title.parado i {
+            background: rgba(239, 68, 68, 0.15);
+            color: var(--accent-red);
+        }
+
+        .sistema-controls {
+            display: flex;
+            gap: 6px;
+        }
+
+        .control-btn {
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            border: none;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.7rem;
+            transition: all 0.2s;
+        }
+
+        .control-btn.minimize {
+            background: var(--accent-yellow);
+            color: #000;
+        }
+
+        .control-btn.maximize {
+            background: var(--accent-green);
+            color: #fff;
+        }
+
+        .control-btn.close {
+            background: var(--accent-red);
+            color: #fff;
+        }
+
+        .control-btn:hover {
+            transform: scale(1.1);
+        }
+
+        .sistema-content {
+            padding: 16px;
+        }
+
+        .sistema-info {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+
+        .info-item {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .info-label {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .info-value {
+            font-size: 0.9rem;
+            font-weight: 500;
+            color: var(--text-primary);
+        }
+
+        .info-value.code {
+            font-family: 'JetBrains Mono', monospace;
+            background: rgba(0,0,0,0.2);
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.8rem;
+        }
+
+        .sistema-stats {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 8px;
+            margin-bottom: 16px;
+            padding: 12px;
+            background: rgba(0,0,0,0.1);
+            border-radius: 8px;
+        }
+
+        .stat-item {
+            text-align: center;
+        }
+
+        .stat-item .stat-number {
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: var(--accent-blue);
+        }
+
+        .stat-item .stat-label {
+            font-size: 0.7rem;
+            color: var(--text-secondary);
+            margin-top: 2px;
+        }
+
+        .sistema-actions {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 8px;
+        }
+
+        .sistema-actions .btn-action {
+            padding: 8px 12px;
+            font-size: 0.8rem;
+            text-align: center;
+            justify-content: center;
+        }
+
+        .git-status-bar {
+            background: rgba(0,0,0,0.15);
+            padding: 8px 12px;
+            margin: 12px -16px -16px -16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.75rem;
+        }
+
+        .git-info-left {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            color: var(--accent-purple);
+        }
+
+        .git-info-right {
+            color: var(--text-secondary);
+        }
+
+        /* Lista compacta */
+        .sistema-lista-item {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 16px;
+            display: grid;
+            grid-template-columns: auto 1fr auto auto;
+            gap: 16px;
+            align-items: center;
+            transition: all 0.2s;
+        }
+
+        .sistema-lista-item:hover {
+            background: var(--bg-card-hover);
+            border-color: var(--accent-blue);
+        }
+
+        .sistema-lista-item.rodando {
+            border-left: 4px solid var(--accent-green);
+        }
+
+        .sistema-lista-item.parado {
+            border-left: 4px solid var(--accent-red);
+            opacity: 0.8;
+        }
+
+        .lista-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.2rem;
+        }
+
+        .lista-icon.rodando {
+            background: rgba(34, 197, 94, 0.15);
+            color: var(--accent-green);
+        }
+
+        .lista-icon.parado {
+            background: rgba(239, 68, 68, 0.15);
+            color: var(--accent-red);
+        }
+
+        .lista-info {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .lista-titulo {
+            font-weight: 600;
+            font-size: 1rem;
+        }
+
+        .lista-subtitulo {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+        }
+
+        .lista-stats {
+            display: flex;
+            gap: 16px;
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+        }
+
+        .lista-actions {
+            display: flex;
+            gap: 6px;
+        }
+
+        .stats-row {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+            margin-bottom: 24px;
+        }
+
+        .stat-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 20px;
+            transition: all 0.2s;
+        }
+
+        .stat-card:hover {
+            background: var(--bg-card-hover);
+            transform: translateY(-2px);
+        }
+
+        .stat-card .stat-icon {
+            width: 40px;
+            height: 40px;
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.2rem;
+            margin-bottom: 12px;
+        }
+
+        .stat-card .stat-label {
+            color: var(--text-secondary);
+            font-size: 0.8rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 4px;
+        }
+
+        .stat-card .stat-value {
+            font-size: 1.4rem;
+            font-weight: 700;
+        }
+
+        .panel {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            margin-bottom: 24px;
+            overflow: hidden;
+        }
+
+        .panel-header {
+            padding: 16px 20px;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .panel-header h2 {
+            font-size: 1rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .panel-body { padding: 20px; }
+        .panel-actions { display: flex; gap: 8px; }
+
+        .btn-action {
+            padding: 6px 14px;
+            border-radius: 8px;
+            border: 1px solid var(--border-color);
+            background: transparent;
+            color: var(--text-primary);
+            font-size: 0.8rem;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            transition: all 0.2s;
+            white-space: nowrap;
+        }
+
+        .btn-action:hover { background: var(--bg-card-hover); }
+        .btn-action.primary { border-color: var(--accent-blue); color: var(--accent-blue); }
+        .btn-action.primary:hover { background: rgba(59, 130, 246, 0.15); }
+        .btn-action.success { border-color: var(--accent-green); color: var(--accent-green); }
+        .btn-action.success:hover { background: rgba(34, 197, 94, 0.15); }
+        .btn-action.danger { border-color: var(--accent-red); color: var(--accent-red); }
+        .btn-action.danger:hover { background: rgba(239, 68, 68, 0.15); }
+        .btn-action.warning { border-color: var(--accent-yellow); color: var(--accent-yellow); }
+        .btn-action.warning:hover { background: rgba(234, 179, 8, 0.15); }
+        .btn-action.purple { border-color: var(--accent-purple); color: var(--accent-purple); }
+        .btn-action.purple:hover { background: rgba(168, 85, 247, 0.15); }
+        .btn-action:disabled { opacity: 0.4; cursor: not-allowed; }
+
+        .service-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(380px, 1fr));
+            gap: 16px;
+        }
+
+        .service-card {
+            background: var(--bg-dark);
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            padding: 16px;
+            transition: all 0.2s;
+        }
+
+        .service-card:hover {
+            border-color: var(--accent-blue);
+            box-shadow: 0 0 20px rgba(59, 130, 246, 0.1);
+        }
+
+        .service-top {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 12px;
+        }
+
+        .service-pid {
+            background: rgba(59, 130, 246, 0.15);
+            color: var(--accent-blue);
+            padding: 3px 10px;
+            border-radius: 6px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            font-family: monospace;
+        }
+
+        .service-status {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.75rem;
+            color: var(--accent-green);
+        }
+
+        .service-status.parado {
+            color: var(--accent-red);
+        }
+
+        .service-card.parado {
+            border-color: rgba(239, 68, 68, 0.3);
+            opacity: 0.85;
+        }
+
+        .service-card.parado:hover {
+            border-color: var(--accent-red);
+            box-shadow: 0 0 20px rgba(239, 68, 68, 0.1);
+            opacity: 1;
+        }
+
+        .service-cmd {
+            font-family: 'JetBrains Mono', 'Fira Code', monospace;
+            font-size: 0.8rem;
+            color: var(--text-primary);
+            background: rgba(0,0,0,0.3);
+            padding: 8px 12px;
+            border-radius: 6px;
+            margin-bottom: 10px;
+            word-break: break-all;
+        }
+
+        .service-meta {
+            display: flex;
+            gap: 16px;
+            margin-bottom: 10px;
+            flex-wrap: wrap;
+        }
+
+        .service-meta span {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .service-meta span strong { color: var(--text-primary); }
+
+        .service-dir {
+            font-size: 0.72rem;
+            color: var(--text-secondary);
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .service-dir code {
+            color: var(--accent-cyan);
+            background: rgba(6, 182, 212, 0.1);
+            padding: 2px 6px;
+            border-radius: 4px;
+        }
+
+        .git-info {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 0.72rem;
+            color: var(--accent-purple);
+            margin-bottom: 12px;
+        }
+
+        .service-actions {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            border-top: 1px solid var(--border-color);
+            padding-top: 12px;
+        }
+
+        .terminal-output {
+            background: #0a0e17;
+            color: #a5f3a6;
+            font-family: 'JetBrains Mono', 'Fira Code', monospace;
+            font-size: 0.78rem;
+            padding: 14px;
+            border-radius: 8px;
+            max-height: 250px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-break: break-all;
+            border: 1px solid #1a2332;
+        }
+
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0;
+            width: 100%; height: 100%;
+            background: rgba(0,0,0,0.7);
+            z-index: 200;
+            justify-content: center;
+            align-items: center;
+            backdrop-filter: blur(4px);
+        }
+
+        .modal-overlay.active { display: flex; }
+
+        .modal-box {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 14px;
+            padding: 24px;
+            width: 90%;
+            max-width: 600px;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+
+        .modal-box h3 {
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .modal-box .form-group { margin-bottom: 14px; }
+
+        .modal-box label {
+            display: block;
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            margin-bottom: 6px;
+        }
+
+        .modal-box input {
+            width: 100%;
+            padding: 10px 14px;
+            background: var(--bg-dark);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            color: var(--text-primary);
+            font-size: 0.9rem;
+        }
+
+        .modal-box input:focus {
+            outline: none;
+            border-color: var(--accent-blue);
+        }
+
+        .modal-box textarea {
+            width: 100%;
+            padding: 10px 14px;
+            background: var(--bg-dark);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            color: var(--text-primary);
+            font-size: 0.9rem;
+            min-height: 80px;
+            resize: vertical;
+        }
+
+        .modal-box .form-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 12px;
+        }
+
+        .input-hint {
+            display: block;
+            font-size: 0.72rem;
+            color: var(--text-secondary);
+            margin-top: 4px;
+        }
+
+        .checkbox-inline {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.82rem;
+            color: var(--text-secondary);
+            margin-top: 6px;
+        }
+
+        .checkbox-inline input {
+            width: auto;
+            accent-color: var(--accent-blue);
+        }
+
+        .logs-box {
+            margin-top: 16px;
+            background: rgba(0,0,0,0.25);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            max-height: 220px;
+            overflow-y: auto;
+            font-family: 'JetBrains Mono', 'Fira Code', monospace;
+            font-size: 0.78rem;
+            padding: 12px;
+        }
+
+        .logs-box .log-line {
+            padding: 4px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+        }
+
+        .logs-box .log-line:last-child { border-bottom: none; }
+
+        .modal-actions {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+            margin-top: 20px;
+        }
+
+        .terminal-wrapper {
+            background: #050a16;
+            border: 1px solid #111a2c;
+            border-radius: 12px;
+            padding: 0;
+            overflow: hidden;
+        }
+
+        .terminal-toolbar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 14px;
+            border-bottom: 1px solid #0d1527;
+            background: #070c16;
+        }
+
+        .terminal-status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+        }
+
+        .terminal-status .pulse {
+            width: 10px;
+            height: 10px;
+        }
+
+        .terminal-screen {
+            height: 360px;
+        }
+
+        .terminal-screen .xterm-viewport {
+            border-bottom-left-radius: 12px;
+            border-bottom-right-radius: 12px;
+        }
+
+        .toast-container {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 300;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .toast {
+            padding: 12px 20px;
+            border-radius: 10px;
+            font-size: 0.85rem;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            animation: slideIn 0.3s ease;
+            min-width: 280px;
+        }
+
+        .toast.success {
+            background: rgba(34, 197, 94, 0.15);
+            border: 1px solid rgba(34, 197, 94, 0.3);
+            color: var(--accent-green);
+        }
+
+        .toast.error {
+            background: rgba(239, 68, 68, 0.15);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            color: var(--accent-red);
+        }
+
+        .toast.info {
+            background: rgba(59, 130, 246, 0.15);
+            border: 1px solid rgba(59, 130, 246, 0.3);
+            color: var(--accent-blue);
+        }
+
+        @keyframes slideIn {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+
+        .db-table { width: 100%; border-collapse: collapse; }
+        .db-table th, .db-table td {
+            padding: 10px 14px;
+            text-align: left;
+            border-bottom: 1px solid var(--border-color);
+            font-size: 0.85rem;
+        }
+        .db-table th {
+            color: var(--text-secondary);
+            font-weight: 600;
+            text-transform: uppercase;
+            font-size: 0.7rem;
+            letter-spacing: 0.5px;
+        }
+        .db-table tr:hover { background: rgba(255,255,255,0.02); }
+
+        .spinner {
+            width: 18px;
+            height: 18px;
+            border: 2px solid transparent;
+            border-top: 2px solid currentColor;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            display: inline-block;
+        }
+
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: var(--text-secondary);
+        }
+
+        .empty-state i { font-size: 2.5rem; margin-bottom: 12px; display: block; }
+
+        @media (max-width: 768px) {
+            .service-grid { grid-template-columns: 1fr; }
+            .stats-row { grid-template-columns: repeat(2, 1fr); }
+            .top-bar { flex-direction: column; gap: 10px; }
+            .service-actions { flex-direction: column; }
+            .service-actions .btn-action { width: 100%; justify-content: center; }
+        }
+    </style>
+</head>
+<body>
+    <div class="top-bar">
+        <h1><i class="bi bi-hdd-rack"></i> VPS Manager Pro</h1>
+        <div style="display:flex;align-items:center;gap:12px">
+            <div class="deploy-actions" style="display:flex;gap:8px">
+                <button class="btn-action success" onclick="abrirModalUpload()" title="Upload de projeto local">
+                    <i class="bi bi-cloud-upload"></i> Upload
+                </button>
+                <button class="btn-action primary" onclick="abrirModalGitClone()" title="Clonar repositório Git">
+                    <i class="bi bi-git"></i> Git Clone
+                </button>
+                <button class="btn-action warning" onclick="abrirBackupGeral()" title="Abrir painel de backup">
+                    <i class="bi bi-archive"></i> Backup
+                </button>
+            </div>
+            <div class="divider" style="width:1px;height:24px;background:var(--border-color)"></div>
+            <button class="btn-action" onclick="abrirModalTerminal()" title="Terminal completo">
+                <i class="bi bi-terminal"></i> Terminal
+            </button>
+            <div id="conexao-status" class="status-badge checking">
+                <div class="pulse"></div> Verificando...
+            </div>
+        </div>
+    </div>
+
+    <div class="toast-container" id="toast-container"></div>
+
+    <!-- Modal Iniciar Serviço Simples -->
+    <div class="modal-overlay" id="modal-iniciar-servico">
+        <div class="modal-box">
+            <h3><i class="bi bi-play-circle" style="color:var(--accent-green)"></i> Iniciar Serviço</h3>
+            <div class="form-group">
+                <label>Diretório do projeto</label>
+                <input type="text" id="iniciar-diretorio" placeholder="/root/meu-projeto">
+                <span class="input-hint">Caminho completo para a pasta do projeto</span>
+            </div>
+            <div class="form-group">
+                <label>Arquivo Python principal</label>
+                <input type="text" id="iniciar-arquivo" value="app.py" placeholder="app.py">
+                <span class="input-hint">Arquivo .py que será executado</span>
+            </div>
+            <div class="modal-actions">
+                <button class="btn-action" onclick="fecharModal('modal-iniciar-servico')">Cancelar</button>
+                <button class="btn-action success" onclick="executarIniciarServico()">
+                    <i class="bi bi-play-fill"></i> Iniciar
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Upload de Projeto -->
+    <div class="modal-overlay" id="modal-upload">
+        <div class="modal-box" style="max-width:800px">
+            <h3><i class="bi bi-cloud-upload" style="color:var(--accent-success)"></i> Upload de Projeto</h3>
+            
+            <div class="upload-area" id="upload-area" 
+                 ondrop="handleFileDrop(event)" 
+                 ondragover="event.preventDefault()" 
+                 ondragenter="event.preventDefault()"
+                 style="border:2px dashed var(--border-color);border-radius:12px;padding:40px;text-align:center;margin-bottom:20px;cursor:pointer;transition:all 0.3s"
+                 onclick="document.getElementById('file-input').click()">
+                <i class="bi bi-cloud-upload" style="font-size:3rem;color:var(--accent-green);margin-bottom:16px;display:block"></i>
+                <div style="font-size:1.1rem;margin-bottom:8px">Arraste arquivos aqui ou clique para selecionar</div>
+                <div style="font-size:0.85rem;color:var(--text-secondary)">Suporte: .zip, .tar.gz, .rar ou pasta comprimida</div>
+                <input type="file" id="file-input" style="display:none" accept=".zip,.tar.gz,.rar" onchange="handleFileSelect(event)">
+            </div>
+
+            <div class="form-grid">
+                <div class="form-group">
+                    <label>Nome do projeto</label>
+                    <input type="text" id="upload-nome" placeholder="meu-projeto">
+                    <span class="input-hint">Nome da pasta que será criada no VPS</span>
+                </div>
+                <div class="form-group">
+                    <label>Diretório destino</label>
+                    <input type="text" id="upload-destino" value="/root" placeholder="/root">
+                    <span class="input-hint">Pasta onde o projeto será extraído</span>
+                </div>
+            </div>
+
+            <div class="form-grid">
+                <div class="form-group">
+                    <label>Arquivo principal</label>
+                    <input type="text" id="upload-arquivo" value="app.py" placeholder="app.py">
+                </div>
+                <div class="form-group">
+                    <label>Porta (opcional)</label>
+                    <input type="number" id="upload-porta" placeholder="5000">
+                </div>
+            </div>
+
+            <div class="form-group">
+                <div class="checkbox-inline">
+                    <input type="checkbox" id="upload-requirements" checked>
+                    <span>Instalar dependências automaticamente (requirements.txt)</span>
+                </div>
+            </div>
+
+            <div class="upload-progress" id="upload-progress" style="display:none;margin-top:16px">
+                <div style="display:flex;justify-content:space-between;margin-bottom:8px">
+                    <span>Enviando...</span>
+                    <span id="upload-percent">0%</span>
+                </div>
+                <div style="background:var(--bg-dark);border-radius:8px;height:8px;overflow:hidden">
+                    <div id="upload-bar" style="background:var(--accent-green);height:100%;width:0%;transition:width 0.3s"></div>
+                </div>
+            </div>
+
+            <div class="logs-box" id="upload-logs" style="display:none">
+                <div style="color:var(--text-secondary)">Aguardando upload...</div>
+            </div>
+
+            <div class="modal-actions">
+                <button class="btn-action" onclick="fecharModal('modal-upload')">Cancelar</button>
+                <button class="btn-action success" id="btn-upload" onclick="executarUpload()" disabled>
+                    <i class="bi bi-send"></i> Fazer Upload
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Git Clone -->
+    <div class="modal-overlay" id="modal-git-clone">
+        <div class="modal-box" style="max-width:700px">
+            <h3><i class="bi bi-git" style="color:var(--accent-primary)"></i> Clonar Repositório Git</h3>
+            
+            <div class="form-group">
+                <label>URL do repositório</label>
+                <input type="text" id="git-url" placeholder="https://github.com/usuario/projeto.git">
+                <span class="input-hint">URL HTTPS ou SSH do repositório Git</span>
+            </div>
+
+            <div class="form-grid">
+                <div class="form-group">
+                    <label>Nome do projeto</label>
+                    <input type="text" id="git-nome" placeholder="meu-projeto">
+                    <span class="input-hint">Nome da pasta (opcional, usa nome do repo)</span>
+                </div>
+                <div class="form-group">
+                    <label>Diretório destino</label>
+                    <input type="text" id="git-destino" value="/root" placeholder="/root">
+                </div>
+            </div>
+
+            <div class="form-grid">
+                <div class="form-group">
+                    <label>Branch</label>
+                    <input type="text" id="git-branch" value="main" placeholder="main">
+                </div>
+                <div class="form-group">
+                    <label>Arquivo principal</label>
+                    <input type="text" id="git-arquivo" value="app.py" placeholder="app.py">
+                </div>
+            </div>
+
+            <div class="auth-section" style="margin-bottom:16px">
+                <div class="checkbox-inline">
+                    <input type="checkbox" id="git-auth" onchange="toggleGitAuth()">
+                    <span>Repositório privado (requer autenticação)</span>
+                </div>
+                <div id="git-auth-fields" style="display:none;margin-top:12px;padding:12px;background:rgba(0,0,0,0.2);border-radius:8px">
+                    <div class="form-grid">
+                        <div class="form-group">
+                            <label>Usuário/Token</label>
+                            <input type="text" id="git-usuario" placeholder="username ou token">
+                        </div>
+                        <div class="form-group">
+                            <label>Senha/Token</label>
+                            <input type="password" id="git-senha" placeholder="password ou personal token">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <div class="checkbox-inline">
+                    <input type="checkbox" id="git-requirements" checked>
+                    <span>Instalar dependências após clone</span>
+                </div>
+            </div>
+
+            <div class="logs-box" id="git-logs">
+                <div style="color:var(--text-secondary)">Aguardando execução...</div>
+            </div>
+
+            <div class="modal-actions">
+                <button class="btn-action" onclick="fecharModal('modal-git-clone')">Cancelar</button>
+                <button class="btn-action primary" id="btn-git-clone" onclick="executarGitClone()">
+                    <i class="bi bi-download"></i> Clonar Repositório
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Terminal Completo -->
+    <div class="modal-overlay" id="modal-terminal-full">
+        <div class="modal-box" style="max-width:95vw;max-height:90vh;width:1200px;height:700px">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+                <h3><i class="bi bi-terminal" style="color:var(--accent-blue)"></i> Terminal SSH</h3>
+                <div style="display:flex;gap:8px;align-items:center">
+                    <div class="terminal-status">
+                        <span class="pulse" id="terminal-full-status-dot" style="background:var(--accent-red)"></span>
+                        <span id="terminal-full-status-text">Offline</span>
+                    </div>
+                    <button class="btn-action primary" id="terminal-full-connect-btn" onclick="conectarTerminalFull()">
+                        <i class="bi bi-plug"></i> SSH Interativo
+                    </button>
+                    <button class="btn-action success" onclick="abrirTerminalSimples()">
+                        <i class="bi bi-terminal"></i> Terminal Simples
+                    </button>
+                    <button class="btn-action danger" id="terminal-full-disconnect-btn" onclick="desconectarTerminalFull()" disabled>
+                        <i class="bi bi-x-circle"></i> Desconectar
+                    </button>
+                    <button class="btn-action" onclick="fecharModal('modal-terminal-full')">
+                        <i class="bi bi-x-lg"></i>
+                    </button>
+                </div>
+            </div>
+            
+            <div class="terminal-wrapper" style="height:600px">
+                <div id="terminal-full-screen" style="height:100%;border-radius:8px;overflow:hidden"></div>
+                
+                <!-- Terminal Simples (alternativa) -->
+                <div id="terminal-simples" style="display:none;height:100%;padding:10px">
+                    <div style="margin-bottom:10px">
+                        <input type="text" id="cmd-input" placeholder="Digite um comando..." 
+                               style="width:calc(100% - 100px);padding:8px;background:var(--bg-dark);border:1px solid var(--border-color);border-radius:4px;color:var(--text-primary)"
+                               onkeypress="if(event.key==='Enter') executarComandoTerminal()">
+                        <button class="btn-action primary" onclick="executarComandoTerminal()" style="margin-left:5px">
+                            <i class="bi bi-play-fill"></i>
+                        </button>
+                    </div>
+                    <div id="terminal-output" style="background:#0a0e17;color:#a5f3a6;font-family:monospace;font-size:0.85rem;padding:10px;height:calc(100% - 60px);overflow-y:auto;border-radius:6px;white-space:pre-wrap"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+
+    <div class="modal-overlay" id="modal-git">
+        <div class="modal-box">
+            <h3><i class="bi bi-git" style="color:var(--accent-purple)"></i> Resultado da Atualização</h3>
+            <div id="git-output-content"></div>
+            <div class="modal-actions">
+                <button class="btn-action" onclick="document.getElementById('modal-git').classList.remove('active')">Fechar</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="modal-backup">
+        <div class="modal-box" style="max-width:860px;width:95%">
+            <h3><i class="bi bi-archive" style="color:var(--accent-yellow)"></i> Backup — <span id="bk-titulo-app" style="color:var(--accent-cyan);font-size:0.9rem"></span></h3>
+
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:16px">
+
+                <!-- Painel VPS -->
+                <div>
+                    <div style="font-size:0.75rem;color:var(--text-secondary);margin-bottom:6px;display:flex;align-items:center;gap:6px">
+                        <i class="bi bi-hdd-rack" style="color:var(--accent-cyan)"></i> <strong style="color:var(--text-primary)">VPS — pasta a copiar</strong>
+                    </div>
+                    <div id="bk-vps-breadcrumb" style="font-size:0.72rem;color:var(--accent-cyan);background:rgba(6,182,212,0.08);padding:6px 10px;border-radius:6px;margin-bottom:6px;font-family:monospace;word-break:break-all"></div>
+                    <div id="bk-vps-lista" style="background:var(--bg-dark);border:1px solid var(--border-color);border-radius:8px;height:240px;overflow-y:auto;padding:6px"></div>
+                </div>
+
+                <!-- Painel Windows -->
+                <div>
+                    <div style="font-size:0.75rem;color:var(--text-secondary);margin-bottom:6px;display:flex;align-items:center;gap:6px">
+                        <i class="bi bi-windows" style="color:var(--accent-blue)"></i> <strong style="color:var(--text-primary)">Windows — pasta de destino</strong>
+                    </div>
+                    <div id="bk-win-breadcrumb" style="font-size:0.72rem;color:var(--accent-blue);background:rgba(59,130,246,0.08);padding:6px 10px;border-radius:6px;margin-bottom:6px;font-family:monospace;word-break:break-all">Drives disponíveis</div>
+                    <div id="bk-win-lista" style="background:var(--bg-dark);border:1px solid var(--border-color);border-radius:8px;height:240px;overflow-y:auto;padding:6px"></div>
+                </div>
+            </div>
+
+            <!-- Resumo da operação -->
+            <div style="background:rgba(0,0,0,0.25);border:1px solid var(--border-color);border-radius:8px;padding:12px;margin-bottom:16px;font-size:0.8rem;display:grid;gap:6px">
+                <div style="display:flex;gap:8px;align-items:center">
+                    <span style="color:var(--text-secondary);min-width:60px">Origem:</span>
+                    <code id="bk-resumo-origem" style="color:var(--accent-cyan)">—</code>
+                </div>
+                <div style="display:flex;gap:8px;align-items:center">
+                    <span style="color:var(--text-secondary);min-width:60px">Destino:</span>
+                    <code id="bk-resumo-destino" style="color:var(--accent-blue)">—</code>
+                </div>
+            </div>
+
+            <div class="modal-actions">
+                <button class="btn-action" onclick="document.getElementById('modal-backup').classList.remove('active')">Cancelar</button>
+                <button class="btn-action warning" id="bk-btn-executar" onclick="executarBackup()" disabled>
+                    <i class="bi bi-archive"></i> Fazer Backup
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="modal-backup-result">
+        <div class="modal-box">
+            <h3><i class="bi bi-archive" style="color:var(--accent-yellow)"></i> Backup Concluído</h3>
+            <div id="backup-result-content"></div>
+            <div class="modal-actions">
+                <button class="btn-action" onclick="document.getElementById('modal-backup-result').classList.remove('active')">Fechar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Detalhes do Sistema -->
+    <div class="modal-overlay" id="modal-detalhes-sistema">
+        <div class="modal-box" style="max-width:900px;width:95%">
+            <h3><i class="bi bi-info-circle" style="color:var(--accent-blue)"></i> Detalhes do Sistema</h3>
+            
+            <div id="detalhes-conteudo">
+                <div style="text-align:center;padding:40px">
+                    <div class="spinner"></div>
+                    <div style="margin-top:10px">Carregando detalhes...</div>
+                </div>
+            </div>
+
+            <div class="modal-actions">
+                <button class="btn-action" onclick="fecharModal('modal-detalhes-sistema')">Fechar</button>
+                <button class="btn-action primary" onclick="editarArquivos()">
+                    <i class="bi bi-pencil"></i> Editar Arquivos
+                </button>
+                <button class="btn-action success" onclick="abrirTerminalSistema()">
+                    <i class="bi bi-terminal"></i> Terminal
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Modal Editor de Arquivos -->
+    <div class="modal-overlay" id="modal-editor">
+        <div class="modal-box" style="max-width:95vw;max-height:90vh;width:1200px;height:700px">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+                <h3><i class="bi bi-code-slash" style="color:var(--accent-green)"></i> Editor de Arquivos</h3>
+                <div style="display:flex;gap:8px">
+                    <select id="arquivo-selecionado" onchange="carregarArquivo()" style="padding:6px;background:var(--bg-dark);border:1px solid var(--border-color);border-radius:4px;color:var(--text-primary)">
+                        <option>Selecione um arquivo...</option>
+                    </select>
+                    <button class="btn-action success" onclick="salvarArquivo()">
+                        <i class="bi bi-save"></i> Salvar
+                    </button>
+                    <button class="btn-action" onclick="fecharModal('modal-editor')">
+                        <i class="bi bi-x-lg"></i>
+                    </button>
+                </div>
+            </div>
+            
+            <textarea id="editor-conteudo" 
+                      style="width:100%;height:600px;background:var(--bg-dark);border:1px solid var(--border-color);border-radius:8px;color:var(--text-primary);font-family:'JetBrains Mono',monospace;font-size:0.9rem;padding:12px;resize:none"
+                      placeholder="Selecione um arquivo para editar..."></textarea>
+        </div>
+    </div>
+
+    <div class="main-container">
+        <div class="stats-row" id="stats-row">
+            <div class="stat-card">
+                <div class="stat-icon" style="background:rgba(59,130,246,0.15);color:var(--accent-blue)">
+                    <i class="bi bi-cpu"></i>
+                </div>
+                <div class="stat-label">Hostname</div>
+                <div class="stat-value" id="stat-hostname">...</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon" style="background:rgba(34,197,94,0.15);color:var(--accent-green)">
+                    <i class="bi bi-clock-history"></i>
+                </div>
+                <div class="stat-label">Uptime</div>
+                <div class="stat-value" id="stat-uptime" style="font-size:0.95rem">...</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon" style="background:rgba(168,85,247,0.15);color:var(--accent-purple)">
+                    <i class="bi bi-memory"></i>
+                </div>
+                <div class="stat-label">Memória</div>
+                <div class="stat-value" id="stat-memoria" style="font-size:0.95rem">...</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-icon" style="background:rgba(234,179,8,0.15);color:var(--accent-yellow)">
+                    <i class="bi bi-hdd"></i>
+                </div>
+                <div class="stat-label">Disco</div>
+                <div class="stat-value" id="stat-disco" style="font-size:0.95rem">...</div>
+            </div>
+        </div>
+
+        <div class="panel">
+            <div class="panel-header">
+                <h2><i class="bi bi-grid-3x3-gap" style="color:var(--accent-green)"></i> Gerenciador de Sistemas</h2>
+                <div class="panel-actions">
+                    <button class="btn-action" onclick="carregarSistemas()">
+                        <i class="bi bi-arrow-clockwise"></i> Atualizar
+                    </button>
+                    <button class="btn-action primary" onclick="alternarVisualizacao()">
+                        <i class="bi bi-grid" id="view-icon"></i> <span id="view-text">Grade</span>
+                    </button>
+                </div>
+            </div>
+            <div class="panel-body">
+                <div id="sistemas-container">
+                    <div class="empty-state">
+                        <div class="spinner" style="width:30px;height:30px;margin:0 auto 12px"></div>
+                        Carregando sistemas...
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="panel">
+            <div class="panel-header">
+                <h2><i class="bi bi-lightning" style="color:var(--accent-yellow)"></i> Comandos Rápidos</h2>
+                <div class="panel-actions">
+                    <button class="btn-action" onclick="atualizarComandos()">
+                        <i class="bi bi-arrow-clockwise"></i> Atualizar
+                    </button>
+                </div>
+            </div>
+            <div class="panel-body">
+                <div class="quick-commands">
+                    <div class="quick-cmd-card" onclick="executarComandoRapido('df -h')">
+                        <i class="bi bi-hdd" style="color:var(--accent-blue)"></i>
+                        <div class="cmd-title">Espaço em Disco</div>
+                        <div class="cmd-desc">Verificar uso do disco</div>
+                    </div>
+                    <div class="quick-cmd-card" onclick="executarComandoRapido('free -h')">
+                        <i class="bi bi-memory" style="color:var(--accent-green)"></i>
+                        <div class="cmd-title">Memória RAM</div>
+                        <div class="cmd-desc">Status da memória</div>
+                    </div>
+                    <div class="quick-cmd-card" onclick="executarComandoRapido('top -bn1 | head -20')">
+                        <i class="bi bi-cpu" style="color:var(--accent-red)"></i>
+                        <div class="cmd-title">Processos</div>
+                        <div class="cmd-desc">Top processos CPU</div>
+                    </div>
+                    <div class="quick-cmd-card" onclick="executarComandoRapido('systemctl status nginx')">
+                        <i class="bi bi-globe" style="color:var(--accent-purple)"></i>
+                        <div class="cmd-title">Nginx Status</div>
+                        <div class="cmd-desc">Verificar web server</div>
+                    </div>
+                    <div class="quick-cmd-card" onclick="executarComandoRapido('docker ps')">
+                        <i class="bi bi-box" style="color:var(--accent-cyan)"></i>
+                        <div class="cmd-title">Docker</div>
+                        <div class="cmd-desc">Containers ativos</div>
+                    </div>
+                    <div class="quick-cmd-card" onclick="executarComandoRapido('ls -la /root')">
+                        <i class="bi bi-folder" style="color:var(--accent-yellow)"></i>
+                        <div class="cmd-title">Listar /root</div>
+                        <div class="cmd-desc">Arquivos e pastas</div>
+                    </div>
+                </div>
+                
+                <div style="margin-top:20px">
+                    <div style="display:flex;gap:8px;margin-bottom:12px">
+                        <input type="text" id="comando-custom" placeholder="Digite um comando..." 
+                               style="flex:1;padding:8px 12px;background:var(--bg-dark);border:1px solid var(--border-color);border-radius:6px;color:var(--text-primary)"
+                               onkeypress="if(event.key==='Enter') executarComandoCustom()">
+                        <button class="btn-action primary" onclick="executarComandoCustom()">
+                            <i class="bi bi-play-fill"></i> Executar
+                        </button>
+                    </div>
+                    <div id="resultado-comando" class="terminal-output" style="display:none;max-height:200px;overflow-y:auto"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="panel">
+            <div class="panel-header">
+                <h2><i class="bi bi-database" style="color:var(--accent-cyan)"></i> PostgreSQL</h2>
+                <div class="panel-actions">
+                    <button class="btn-action" onclick="carregarPostgres()">
+                        <i class="bi bi-arrow-clockwise"></i> Status
+                    </button>
+                    <button class="btn-action primary" onclick="carregarBancosDados()">
+                        <i class="bi bi-list-ul"></i> Bancos
+                    </button>
+                </div>
+            </div>
+            <div class="panel-body">
+                <div id="postgres-info">
+                    <div class="empty-state">
+                        <i class="bi bi-database"></i>
+                        Clique em "Status" para verificar
+                    </div>
+                </div>
+                <div id="postgres-databases"></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/socket.io/socket.io.js"></script>
+    <script src="https://unpkg.com/xterm@5.4.0/lib/xterm.js"></script>
+    <script src="https://unpkg.com/xterm-addon-fit@0.7.0/lib/xterm-addon-fit.js"></script>
+    <script>
+        function escapeHtml(str = '') {
+            return str
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        function toast(msg, tipo = 'info') {
+            const container = document.getElementById('toast-container');
+            const icons = { success: 'check-circle-fill', error: 'x-circle-fill', info: 'info-circle-fill' };
+            const t = document.createElement('div');
+            t.className = `toast ${tipo}`;
+            t.innerHTML = `<i class="bi bi-${icons[tipo]}"></i> ${msg}`;
+            container.appendChild(t);
+            setTimeout(() => { t.style.opacity = '0'; setTimeout(() => t.remove(), 300); }, 4000);
+        }
+
+        function testarConexao() {
+            fetch('/api/teste-conexao')
+                .then(r => r.json())
+                .then(data => {
+                    const badge = document.getElementById('conexao-status');
+                    if (data.sucesso) {
+                        badge.className = 'status-badge online';
+                        badge.innerHTML = '<div class="pulse"></div> Conectado';
+                    } else {
+                        badge.className = 'status-badge offline';
+                        badge.innerHTML = '<div class="pulse"></div> Desconectado';
+                    }
+                })
+                .catch(() => {
+                    const badge = document.getElementById('conexao-status');
+                    badge.className = 'status-badge offline';
+                    badge.innerHTML = '<div class="pulse"></div> Erro';
+                });
+        }
+
+        function carregarSistemaInfo() {
+            fetch('/api/sistema/info')
+                .then(r => r.json())
+                .then(data => {
+                    if (data.sucesso) {
+                        document.getElementById('stat-hostname').textContent = data.info.hostname || 'N/A';
+
+                        const uptime = data.info.uptime || '';
+                        const match = uptime.match(/up\s+(.+?),\s+\d+\s+user/);
+                        document.getElementById('stat-uptime').textContent = match ? match[1].trim() : uptime.substring(0, 30);
+
+                        const memLinhas = (data.info.memoria || '').split('\n');
+                        if (memLinhas.length > 1) {
+                            const memParts = memLinhas[1].split(/\s+/);
+                            document.getElementById('stat-memoria').textContent = `${memParts[2] || '?'} / ${memParts[1] || '?'}`;
+                        }
+
+                        const discoLinhas = (data.info.disco || '').split('\n');
+                        if (discoLinhas.length > 1) {
+                            const discoParts = discoLinhas[1].split(/\s+/);
+                            document.getElementById('stat-disco').textContent = `${discoParts[2] || '?'} / ${discoParts[1] || '?'} (${discoParts[4] || '?'})`;
+                        }
+                    }
+                });
+        }
+
+        // ==================== INTERFACE TIPO WINDOWS ====================
+        
+        let visualizacaoAtual = 'grid'; // 'grid' ou 'lista'
+
+        function carregarSistemas() {
+            fetch('/api/servicos/todos')
+                .then(r => r.json())
+                .then(data => {
+                    const container = document.getElementById('sistemas-container');
+
+                    if (data.sucesso && data.servicos && data.servicos.length > 0) {
+                        const rodando = data.servicos.filter(s => s.status === 'rodando');
+                        const parados = data.servicos.filter(s => s.status === 'parado');
+
+                        // Atualiza contador no header
+                        const headerEl = document.querySelector('.panel-header h2');
+                        if (headerEl) {
+                            headerEl.innerHTML = `<i class="bi bi-grid-3x3-gap" style="color:var(--accent-green)"></i> Gerenciador de Sistemas
+                                <span style="font-size:0.75rem;font-weight:400;color:var(--accent-green);margin-left:8px">${rodando.length} ativos</span>
+                                ${parados.length > 0 ? `<span style="font-size:0.75rem;font-weight:400;color:var(--accent-red);margin-left:4px">• ${parados.length} parado${parados.length > 1 ? 's' : ''}</span>` : ''}
+                            `;
+                        }
+
+                        if (visualizacaoAtual === 'grid') {
+                            renderizarGrade(data.servicos, container);
+                        } else {
+                            renderizarLista(data.servicos, container);
+                        }
+                    } else {
+                        container.innerHTML = `
+                            <div class="empty-state">
+                                <i class="bi bi-grid-3x3-gap"></i>
+                                Nenhum sistema encontrado
+                            </div>
+                        `;
+                    }
+                })
+                .catch(() => {
+                    document.getElementById('sistemas-container').innerHTML = `
+                        <div class="empty-state">
+                            <i class="bi bi-exclamation-triangle" style="color:var(--accent-red)"></i>
+                            Erro ao carregar sistemas
+                        </div>
+                    `;
+                });
+        }
+
+        function renderizarGrade(sistemas, container) {
+            let html = '<div class="sistemas-grid">';
+
+            sistemas.forEach(s => {
+                const temGit = s.git_info && !s.git_info.includes('sem-git');
+                const gitLines = temGit ? s.git_info.split('\n') : [];
+                const commitShort = gitLines[0] || '';
+                const gitUrl = gitLines[1] || '';
+                const estaRodando = s.status === 'rodando';
+                const arquivo = s.arquivo || 'app.py';
+                const dirEscaped = (s.diretorio || '').replace(/'/g, "\\'");
+                const nome_projeto = (s.diretorio || '').split('/').filter(Boolean).pop() || 'Sistema';
+
+                html += `
+                    <div class="sistema-window ${estaRodando ? 'rodando' : 'parado'}">
+                        <!-- Barra de título tipo Windows -->
+                        <div class="sistema-titlebar">
+                            <div class="sistema-title ${estaRodando ? 'rodando' : 'parado'}">
+                                <i class="bi bi-${estaRodando ? 'play-circle-fill' : 'stop-circle'}"></i>
+                                <span>${nome_projeto}</span>
+                            </div>
+                            <div class="sistema-controls">
+                                <button class="control-btn minimize" onclick="minimizarSistema(this)" title="Minimizar">
+                                    <i class="bi bi-dash"></i>
+                                </button>
+                                <button class="control-btn maximize" onclick="abrirDetalhes('${s.diretorio}')" title="Detalhes">
+                                    <i class="bi bi-arrows-fullscreen"></i>
+                                </button>
+                                <button class="control-btn close" onclick="pararSistema('${s.pid || 'parado'}')" title="Parar">
+                                    <i class="bi bi-x"></i>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Conteúdo da janela -->
+                        <div class="sistema-content">
+                            <!-- Informações básicas -->
+                            <div class="sistema-info">
+                                <div class="info-item">
+                                    <div class="info-label">Status</div>
+                                    <div class="info-value" style="color:${estaRodando ? 'var(--accent-green)' : 'var(--accent-red)'}">
+                                        ${estaRodando ? '🟢 Rodando' : '🔴 Parado'}
+                                    </div>
+                                </div>
+                                <div class="info-item">
+                                    <div class="info-label">PID</div>
+                                    <div class="info-value">${s.pid || 'N/A'}</div>
+                                </div>
+                                <div class="info-item">
+                                    <div class="info-label">Arquivo</div>
+                                    <div class="info-value code">${arquivo}</div>
+                                </div>
+                                <div class="info-item">
+                                    <div class="info-label">Diretório</div>
+                                    <div class="info-value code">${s.diretorio || 'N/A'}</div>
+                                </div>
+                            </div>
+
+                            ${estaRodando ? `
+                                <!-- Estatísticas de performance -->
+                                <div class="sistema-stats">
+                                    <div class="stat-item">
+                                        <div class="stat-number">${s.cpu}%</div>
+                                        <div class="stat-label">CPU</div>
+                                    </div>
+                                    <div class="stat-item">
+                                        <div class="stat-number">${s.memoria}%</div>
+                                        <div class="stat-label">RAM</div>
+                                    </div>
+                                    <div class="stat-item">
+                                        <div class="stat-number">${s.time}</div>
+                                        <div class="stat-label">Uptime</div>
+                                    </div>
+                                    <div class="stat-item">
+                                        <div class="stat-number">${s.start}</div>
+                                        <div class="stat-label">Início</div>
+                                    </div>
+                                </div>
+                            ` : ''}
+
+                            <!-- Ações do sistema -->
+                            <div class="sistema-actions">
+                                ${estaRodando ? `
+                                    <button class="btn-action danger" onclick="pararServico('${s.pid}')">
+                                        <i class="bi bi-stop-fill"></i> Parar
+                                    </button>
+                                    <button class="btn-action warning" onclick="reiniciarSistema('${s.pid}')">
+                                        <i class="bi bi-arrow-clockwise"></i> Reiniciar
+                                    </button>
+                                    ${temGit ? `
+                                        <button class="btn-action primary" onclick="atualizarSistema('${s.pid}')">
+                                            <i class="bi bi-cloud-download"></i> Atualizar
+                                        </button>
+                                    ` : `
+                                        <button class="btn-action" onclick="editarSistema('${dirEscaped}')">
+                                            <i class="bi bi-pencil"></i> Editar
+                                        </button>
+                                    `}
+                                ` : `
+                                    <button class="btn-action success" onclick="iniciarServicoPronto('${dirEscaped}', '${arquivo}', this)">
+                                        <i class="bi bi-play-fill"></i> Iniciar
+                                    </button>
+                                    <button class="btn-action" onclick="editarSistema('${dirEscaped}')">
+                                        <i class="bi bi-pencil"></i> Editar
+                                    </button>
+                                    <button class="btn-action danger" onclick="removerSistema('${dirEscaped}')">
+                                        <i class="bi bi-trash"></i> Remover
+                                    </button>
+                                `}
+                            </div>
+                        </div>
+
+                        ${temGit ? `
+                            <!-- Barra de status Git -->
+                            <div class="git-status-bar">
+                                <div class="git-info-left">
+                                    <i class="bi bi-git"></i>
+                                    <span>${commitShort}</span>
+                                </div>
+                                <div class="git-info-right">
+                                    <i class="bi bi-cloud"></i> Git
+                                </div>
+                            </div>
+                        ` : ''}
+                    </div>
+                `;
+            });
+
+            html += '</div>';
+            container.innerHTML = html;
+        }
+
+        function renderizarLista(sistemas, container) {
+            let html = '<div class="sistemas-lista">';
+
+            sistemas.forEach(s => {
+                const estaRodando = s.status === 'rodando';
+                const arquivo = s.arquivo || 'app.py';
+                const dirEscaped = (s.diretorio || '').replace(/'/g, "\\'");
+                const nome_projeto = (s.diretorio || '').split('/').filter(Boolean).pop() || 'Sistema';
+
+                html += `
+                    <div class="sistema-lista-item ${estaRodando ? 'rodando' : 'parado'}">
+                        <div class="lista-icon ${estaRodando ? 'rodando' : 'parado'}">
+                            <i class="bi bi-${estaRodando ? 'play-circle-fill' : 'stop-circle'}"></i>
+                        </div>
+                        
+                        <div class="lista-info">
+                            <div class="lista-titulo">${nome_projeto}</div>
+                            <div class="lista-subtitulo">${s.diretorio} • ${arquivo}</div>
+                            ${estaRodando ? `
+                                <div class="lista-stats">
+                                    <span>PID: ${s.pid}</span>
+                                    <span>CPU: ${s.cpu}%</span>
+                                    <span>RAM: ${s.memoria}%</span>
+                                    <span>Uptime: ${s.time}</span>
+                                </div>
+                            ` : ''}
+                        </div>
+
+                        <div class="lista-actions">
+                            ${estaRodando ? `
+                                <button class="btn-action danger" onclick="pararServico('${s.pid}')">
+                                    <i class="bi bi-stop-fill"></i>
+                                </button>
+                                <button class="btn-action warning" onclick="reiniciarSistema('${s.pid}')">
+                                    <i class="bi bi-arrow-clockwise"></i>
+                                </button>
+                            ` : `
+                                <button class="btn-action success" onclick="iniciarServicoPronto('${dirEscaped}', '${arquivo}', this)">
+                                    <i class="bi bi-play-fill"></i>
+                                </button>
+                            `}
+                            <button class="btn-action" onclick="editarSistema('${dirEscaped}')">
+                                <i class="bi bi-pencil"></i>
+                            </button>
+                        </div>
+                    </div>
+                `;
+            });
+
+            html += '</div>';
+            container.innerHTML = html;
+        }
+
+        function alternarVisualizacao() {
+            visualizacaoAtual = visualizacaoAtual === 'grid' ? 'lista' : 'grid';
+            
+            const icon = document.getElementById('view-icon');
+            const text = document.getElementById('view-text');
+            
+            if (visualizacaoAtual === 'grid') {
+                icon.className = 'bi bi-grid';
+                text.textContent = 'Grade';
+            } else {
+                icon.className = 'bi bi-list-ul';
+                text.textContent = 'Lista';
+            }
+            
+            carregarSistemas();
+        }
+
+        // Funções de controle dos sistemas
+        function minimizarSistema(btn) {
+            const window = btn.closest('.sistema-window');
+            const content = window.querySelector('.sistema-content');
+            
+            if (content.style.display === 'none') {
+                content.style.display = 'block';
+                btn.innerHTML = '<i class="bi bi-dash"></i>';
+            } else {
+                content.style.display = 'none';
+                btn.innerHTML = '<i class="bi bi-plus"></i>';
+            }
+        }
+
+        function abrirDetalhes(diretorio) {
+            // Modal com detalhes completos do sistema
+            toast('Abrindo detalhes do sistema...', 'info');
+            // Implementar modal de detalhes
+        }
+
+        function pararSistema(pid) {
+            if (pid === 'parado') return;
+            pararServico(pid);
+        }
+
+        function reiniciarSistema(pid) {
+            if (!confirm('Reiniciar este sistema?')) return;
+            
+            // Para e inicia novamente
+            fetch(`/api/servico/parar/${pid}`)
+                .then(r => r.json())
+                .then(data => {
+                    if (data.sucesso) {
+                        toast('Sistema reiniciado!', 'success');
+                        setTimeout(carregarSistemas, 2000);
+                    } else {
+                        toast('Erro ao reiniciar: ' + data.erro, 'error');
+                    }
+                });
+        }
+
+        function atualizarSistema(pid) {
+            atualizarReiniciar(pid);
+        }
+
+        function editarSistema(diretorio) {
+            toast('Funcionalidade de edição em desenvolvimento...', 'info');
+            // Implementar editor de arquivos
+        }
+
+        function removerSistema(diretorio) {
+            if (!confirm(`Remover sistema em ${diretorio}?\n\nISSO IRÁ DELETAR TODOS OS ARQUIVOS!`)) return;
+            
+            toast('Funcionalidade de remoção em desenvolvimento...', 'warning');
+            // Implementar remoção segura
+        }
+
+        // Alias para compatibilidade
+        const carregarServicos = carregarSistemas;
+
+        // ==================== DETALHES E EDITOR ====================
+        
+        let sistemaAtual = null;
+
+        function abrirDetalhes(diretorio) {
+            sistemaAtual = diretorio;
+            document.getElementById('modal-detalhes-sistema').classList.add('active');
+            carregarDetalhesSistema(diretorio);
+        }
+
+        function carregarDetalhesSistema(diretorio) {
+            const conteudo = document.getElementById('detalhes-conteudo');
+            
+            // Busca informações detalhadas do sistema
+            Promise.all([
+                fetch('/api/executar-comando', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ comando: `ls -la "${diretorio}"` })
+                }).then(r => r.json()),
+                
+                fetch('/api/executar-comando', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ comando: `du -sh "${diretorio}"` })
+                }).then(r => r.json()),
+                
+                fetch('/api/executar-comando', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ comando: `cd "${diretorio}" && git status 2>/dev/null || echo "Sem Git"` })
+                }).then(r => r.json())
+            ])
+            .then(([arquivos, tamanho, gitStatus]) => {
+                const arquivosLista = arquivos.sucesso ? arquivos.resultado : 'Erro ao listar arquivos';
+                const tamanhoDir = tamanho.sucesso ? tamanho.resultado.split('\t')[0] : 'N/A';
+                const statusGit = gitStatus.sucesso ? gitStatus.resultado : 'Sem Git';
+                
+                conteudo.innerHTML = `
+                    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:20px">
+                        <div>
+                            <h4 style="margin-bottom:12px;color:var(--accent-blue)">
+                                <i class="bi bi-info-circle"></i> Informações Gerais
+                            </h4>
+                            <div style="background:rgba(0,0,0,0.2);padding:12px;border-radius:8px">
+                                <div style="margin-bottom:8px">
+                                    <strong>Diretório:</strong><br>
+                                    <code style="color:var(--accent-cyan)">${diretorio}</code>
+                                </div>
+                                <div style="margin-bottom:8px">
+                                    <strong>Tamanho:</strong> ${tamanhoDir}
+                                </div>
+                                <div>
+                                    <strong>Arquivos:</strong> ${arquivosLista.split('\n').length - 1} itens
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div>
+                            <h4 style="margin-bottom:12px;color:var(--accent-purple)">
+                                <i class="bi bi-git"></i> Status Git
+                            </h4>
+                            <div style="background:rgba(0,0,0,0.2);padding:12px;border-radius:8px">
+                                <pre style="font-size:0.8rem;margin:0;white-space:pre-wrap">${statusGit}</pre>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div>
+                        <h4 style="margin-bottom:12px;color:var(--accent-green)">
+                            <i class="bi bi-folder2-open"></i> Arquivos e Pastas
+                        </h4>
+                        <div style="background:rgba(0,0,0,0.2);padding:12px;border-radius:8px;max-height:300px;overflow-y:auto">
+                            <pre style="font-size:0.8rem;margin:0;font-family:monospace">${arquivosLista}</pre>
+                        </div>
+                    </div>
+                `;
+            })
+            .catch(err => {
+                conteudo.innerHTML = `
+                    <div style="text-align:center;padding:40px;color:var(--accent-red)">
+                        <i class="bi bi-exclamation-triangle" style="font-size:2rem;margin-bottom:12px;display:block"></i>
+                        Erro ao carregar detalhes: ${err}
+                    </div>
+                `;
+            });
+        }
+
+        function editarArquivos() {
+            if (!sistemaAtual) return;
+            
+            document.getElementById('modal-editor').classList.add('active');
+            carregarListaArquivos(sistemaAtual);
+        }
+
+        function carregarListaArquivos(diretorio) {
+            const select = document.getElementById('arquivo-selecionado');
+            
+            // Lista arquivos editáveis
+            fetch('/api/executar-comando', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    comando: `find "${diretorio}" -maxdepth 2 -type f \\( -name "*.py" -o -name "*.txt" -o -name "*.json" -o -name "*.yaml" -o -name "*.yml" -o -name "*.env" -o -name "*.md" \\) | head -20`
+                })
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.sucesso) {
+                    const arquivos = data.resultado.trim().split('\n').filter(f => f);
+                    select.innerHTML = '<option value="">Selecione um arquivo...</option>';
+                    
+                    arquivos.forEach(arquivo => {
+                        const nome = arquivo.split('/').pop();
+                        select.innerHTML += `<option value="${arquivo}">${nome}</option>`;
+                    });
+                } else {
+                    select.innerHTML = '<option>Erro ao listar arquivos</option>';
+                }
+            });
+        }
+
+        function carregarArquivo() {
+            const select = document.getElementById('arquivo-selecionado');
+            const editor = document.getElementById('editor-conteudo');
+            const arquivo = select.value;
+            
+            if (!arquivo) {
+                editor.value = '';
+                return;
+            }
+            
+            editor.value = 'Carregando arquivo...';
+            editor.disabled = true;
+            
+            fetch('/api/executar-comando', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ comando: `cat "${arquivo}"` })
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.sucesso) {
+                    editor.value = data.resultado;
+                } else {
+                    editor.value = `Erro ao carregar arquivo: ${data.erro}`;
+                }
+            })
+            .catch(err => {
+                editor.value = `Erro de conexão: ${err}`;
+            })
+            .finally(() => {
+                editor.disabled = false;
+            });
+        }
+
+        function salvarArquivo() {
+            const select = document.getElementById('arquivo-selecionado');
+            const editor = document.getElementById('editor-conteudo');
+            const arquivo = select.value;
+            const conteudo = editor.value;
+            
+            if (!arquivo) {
+                toast('Selecione um arquivo primeiro', 'error');
+                return;
+            }
+            
+            if (!confirm(`Salvar alterações em ${arquivo.split('/').pop()}?`)) return;
+            
+            // Escapa o conteúdo para o comando
+            const conteudoEscapado = conteudo.replace(/'/g, "'\"'\"'");
+            
+            fetch('/api/executar-comando', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ 
+                    comando: `cat > "${arquivo}" << 'EOF'
+${conteudo}
+EOF` 
+                })
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.sucesso) {
+                    toast('Arquivo salvo com sucesso!', 'success');
+                } else {
+                    toast('Erro ao salvar: ' + data.erro, 'error');
+                }
+            })
+            .catch(err => {
+                toast('Erro de conexão ao salvar', 'error');
+            });
+        }
+
+        function abrirTerminalSistema() {
+            if (!sistemaAtual) return;
+            
+            // Abre terminal simples com contexto do sistema
+            document.getElementById('modal-terminal-full').classList.add('active');
+            setTimeout(() => {
+                abrirTerminalSimples();
+                // Executa cd para o diretório do sistema
+                setTimeout(() => {
+                    const input = document.getElementById('cmd-input');
+                    const output = document.getElementById('terminal-output');
+                    if (input && output) {
+                        output.innerHTML += `$ cd "${sistemaAtual}"\n`;
+                        output.innerHTML += `Diretório alterado para: ${sistemaAtual}\n\n`;
+                        output.scrollTop = output.scrollHeight;
+                    }
+                }, 500);
+            }, 100);
+        }
+
+        function iniciarServicoPronto(diretorio, arquivo, btn) {
+            const originalHtml = btn.innerHTML;
+            btn.innerHTML = '<span class="spinner"></span> Iniciando...';
+            btn.disabled = true;
+
+            fetch('/api/servico/iniciar', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ diretorio, arquivo })
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.sucesso) {
+                    toast(data.mensagem, 'success');
+                    setTimeout(carregarServicos, 1500);
+                } else {
+                    btn.innerHTML = originalHtml;
+                    btn.disabled = false;
+                    toast('Erro ao iniciar: ' + (data.erro || 'desconhecido'), 'error');
+                }
+            })
+            .catch(() => {
+                btn.innerHTML = originalHtml;
+                btn.disabled = false;
+                toast('Erro de conexão ao iniciar serviço', 'error');
+            });
+        }
+
+        function gitPull(pid) {
+            const btn = document.getElementById(`btn-pull-${pid}`);
+            const originalHtml = btn.innerHTML;
+            btn.innerHTML = '<span class="spinner"></span> Baixando...';
+            btn.disabled = true;
+
+            fetch(`/api/servico/git-pull/${pid}`)
+                .then(r => r.json())
+                .then(data => {
+                    btn.innerHTML = originalHtml;
+                    btn.disabled = false;
+
+                    if (data.sucesso) {
+                        const output = data.resultado || 'Sem alterações';
+                        document.getElementById('git-output-content').innerHTML = `
+                            <div style="margin-bottom:12px">
+                                <span style="color:var(--text-secondary)">Diretório:</span>
+                                <code style="color:var(--accent-cyan)">${data.diretorio}</code>
+                            </div>
+                            <div class="terminal-output">${output}</div>
+                        `;
+                        document.getElementById('modal-git').classList.add('active');
+
+                        if (output.includes('Already up to date')) {
+                            toast('Já está atualizado!', 'info');
+                        } else {
+                            toast('Git pull realizado com sucesso!', 'success');
+                        }
+                    } else {
+                        toast('Erro no git pull: ' + (data.erro || 'desconhecido'), 'error');
+                    }
+                })
+                .catch(() => {
+                    btn.innerHTML = originalHtml;
+                    btn.disabled = false;
+                    toast('Erro de conexão ao fazer git pull', 'error');
+                });
+        }
+
+        function atualizarReiniciar(pid) {
+            if (!confirm(`Atualizar e reiniciar o serviço PID ${pid}?\n\nIsso vai:\n1. Git Pull\n2. Parar o serviço\n3. Instalar dependências (se necessário)\n4. Reiniciar o serviço`)) return;
+
+            const btn = document.getElementById(`btn-update-${pid}`);
+            const originalHtml = btn.innerHTML;
+            btn.innerHTML = '<span class="spinner"></span> Atualizando...';
+            btn.disabled = true;
+
+            fetch(`/api/servico/atualizar-reiniciar/${pid}`, { method: 'POST' })
+                .then(r => r.json())
+                .then(data => {
+                    btn.innerHTML = originalHtml;
+                    btn.disabled = false;
+
+                    let outputHtml = `
+                        <div style="display:grid;gap:12px;">
+                            <div style="display:flex;justify-content:space-between;padding:12px;background:rgba(0,0,0,0.2);border-radius:8px;">
+                                <div>
+                                    <span style="color:var(--text-secondary);font-size:0.75rem">Diretório</span><br>
+                                    <code style="color:var(--accent-cyan)">${data.diretorio || 'N/A'}</code>
+                                </div>
+                                <div style="text-align:right">
+                                    <span style="color:var(--text-secondary);font-size:0.75rem">Arquivo</span><br>
+                                    <code style="color:var(--accent-green)">${data.arquivo || 'N/A'}</code>
+                                </div>
+                            </div>
+                            <div style="padding:12px;background:rgba(0,0,0,0.2);border-radius:8px;">
+                                <span style="color:var(--text-secondary);font-size:0.75rem">Git Pull:</span><br>
+                                <div class="terminal-output">${data.git_output || 'Sem output'}</div>
+                            </div>
+                            ${data.pip_output ? `
+                                <div style="padding:12px;background:rgba(0,0,0,0.2);border-radius:8px;">
+                                    <span style="color:var(--text-secondary);font-size:0.75rem">Instalação de dependências:</span><br>
+                                    <div class="terminal-output">${data.pip_output}</div>
+                                </div>
+                            ` : ''}
+                            <div style="display:flex;gap:20px;margin-top:12px;padding:12px;background:rgba(0,0,0,0.2);border-radius:8px;">
+                                <div>
+                                    <span style="color:var(--text-secondary);font-size:0.8rem">PID Antigo</span><br>
+                                    <span style="color:var(--accent-red);font-weight:600">${data.pid_antigo}</span>
+                                </div>
+                                <div style="color:var(--text-secondary);display:flex;align-items:center">→</div>
+                                <div>
+                                    <span style="color:var(--text-secondary);font-size:0.8rem">PID Novo</span><br>
+                                    <span style="color:var(--accent-green);font-weight:600">${data.pid_novo}</span>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+
+                    document.getElementById('git-output-content').innerHTML = outputHtml;
+                    document.getElementById('modal-git').classList.add('active');
+
+                    if (data.sucesso) {
+                        toast(data.mensagem || 'Serviço atualizado e reiniciado!', 'success');
+                    } else {
+                        toast('Erro ao reiniciar: ' + (data.erro || 'desconhecido'), 'error');
+                    }
+
+                    setTimeout(carregarServicos, 2000);
+                })
+                .catch(() => {
+                    btn.innerHTML = originalHtml;
+                    btn.disabled = false;
+                    toast('Erro de conexão ao atualizar', 'error');
+                });
+        }
+
+        function gitStatus(pid) {
+            toast('Verificando git status...', 'info');
+
+            fetch(`/api/servico/git-status/${pid}`)
+                .then(r => r.json())
+                .then(data => {
+                    if (data.sucesso) {
+                        const g = data.git;
+                        const atras = parseInt(g.atras) || 0;
+                        const statusColor = atras > 0 ? 'var(--accent-yellow)' : 'var(--accent-green)';
+                        const statusText = atras > 0 ? `${atras} commit(s) atrás` : 'Atualizado';
+
+                        let outputHtml = `
+                            <div style="display:grid;gap:12px;">
+                                <div style="display:flex;justify-content:space-between;padding:12px;background:rgba(0,0,0,0.2);border-radius:8px;">
+                                    <div>
+                                        <span style="color:var(--text-secondary);font-size:0.75rem">Branch</span><br>
+                                        <span style="color:var(--accent-purple);font-weight:600">${g.branch}</span>
+                                    </div>
+                                    <div style="text-align:right">
+                                        <span style="color:var(--text-secondary);font-size:0.75rem">Status</span><br>
+                                        <span style="color:${statusColor};font-weight:600">${statusText}</span>
+                                    </div>
+                                </div>
+                                <div style="padding:12px;background:rgba(0,0,0,0.2);border-radius:8px;">
+                                    <span style="color:var(--text-secondary);font-size:0.75rem">Commit Local</span><br>
+                                    <code style="color:var(--accent-cyan);font-size:0.85rem">${g.commit_local}</code>
+                                </div>
+                                <div style="padding:12px;background:rgba(0,0,0,0.2);border-radius:8px;">
+                                    <span style="color:var(--text-secondary);font-size:0.75rem">Commit Remoto</span><br>
+                                    <code style="color:var(--accent-cyan);font-size:0.85rem">${g.commit_remoto}</code>
+                                </div>
+                                ${g.status ? `
+                                    <div>
+                                        <span style="color:var(--text-secondary);font-size:0.75rem">Arquivos modificados:</span>
+                                        <div class="terminal-output">${g.status}</div>
+                                    </div>
+                                ` : '<div style="color:var(--accent-green);font-size:0.85rem"><i class="bi bi-check-circle"></i> Working tree limpa</div>'}
+                                <div style="color:var(--text-secondary);font-size:0.75rem">
+                                    <i class="bi bi-clock"></i> Último fetch: ${g.ultimo_pull}
+                                </div>
+                            </div>
+                        `;
+
+                        document.getElementById('git-output-content').innerHTML = outputHtml;
+                        document.getElementById('modal-git').classList.add('active');
+                    } else {
+                        toast('Erro ao verificar git status', 'error');
+                    }
+                });
+        }
+
+        function fecharModal(modalId = 'modal-iniciar') {
+            const modal = document.getElementById(modalId);
+            if (modal) modal.classList.remove('active');
+        }
+
+        // ==================== UPLOAD DE PROJETO ====================
+        
+        function abrirModalUpload() {
+            document.getElementById('modal-upload').classList.add('active');
+            resetarUpload();
+        }
+
+        function resetarUpload() {
+            document.getElementById('upload-nome').value = '';
+            document.getElementById('upload-destino').value = '/root';
+            document.getElementById('upload-arquivo').value = 'app.py';
+            document.getElementById('upload-porta').value = '';
+            document.getElementById('upload-requirements').checked = true;
+            document.getElementById('btn-upload').disabled = true;
+            document.getElementById('upload-progress').style.display = 'none';
+            document.getElementById('upload-logs').style.display = 'none';
+            document.getElementById('file-input').value = '';
+        }
+
+        function handleFileDrop(event) {
+            event.preventDefault();
+            const area = document.getElementById('upload-area');
+            area.classList.remove('drag-over');
+            
+            const files = event.dataTransfer.files;
+            if (files.length > 0) {
+                processarArquivo(files[0]);
+            }
+        }
+
+        function handleFileSelect(event) {
+            const files = event.target.files;
+            if (files.length > 0) {
+                processarArquivo(files[0]);
+            }
+        }
+
+        function processarArquivo(arquivo) {
+            const nomeArquivo = arquivo.name;
+            const nomeProjeto = nomeArquivo.replace(/\.(zip|tar\.gz|rar)$/, '');
+            
+            document.getElementById('upload-nome').value = nomeProjeto;
+            document.getElementById('btn-upload').disabled = false;
+            
+            toast(`Arquivo selecionado: ${nomeArquivo}`, 'success');
+        }
+
+        function executarUpload() {
+            const arquivo = document.getElementById('file-input').files[0];
+            const nome = document.getElementById('upload-nome').value.trim();
+            const destino = document.getElementById('upload-destino').value.trim();
+            const arquivoPrincipal = document.getElementById('upload-arquivo').value.trim();
+            const porta = document.getElementById('upload-porta').value.trim();
+            const requirements = document.getElementById('upload-requirements').checked;
+
+            if (!arquivo || !nome) {
+                toast('Selecione um arquivo e defina o nome do projeto', 'error');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('arquivo', arquivo);
+            formData.append('nome', nome);
+            formData.append('destino', destino);
+            formData.append('arquivo_principal', arquivoPrincipal);
+            formData.append('porta', porta);
+            formData.append('requirements', requirements);
+
+            const btn = document.getElementById('btn-upload');
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner"></span> Enviando...';
+            
+            document.getElementById('upload-progress').style.display = 'block';
+            document.getElementById('upload-logs').style.display = 'block';
+            
+            // Simular progresso (você pode implementar progresso real)
+            let progress = 0;
+            const progressInterval = setInterval(() => {
+                progress += Math.random() * 15;
+                if (progress > 90) progress = 90;
+                document.getElementById('upload-percent').textContent = Math.round(progress) + '%';
+                document.getElementById('upload-bar').style.width = progress + '%';
+            }, 200);
+
+            fetch('/api/upload-projeto', {
+                method: 'POST',
+                body: formData
+            })
+            .then(r => r.json())
+            .then(data => {
+                clearInterval(progressInterval);
+                document.getElementById('upload-percent').textContent = '100%';
+                document.getElementById('upload-bar').style.width = '100%';
+                
+                btn.disabled = false;
+                btn.innerHTML = '<i class="bi bi-send"></i> Fazer Upload';
+                
+                if (data.sucesso) {
+                    toast('Projeto enviado com sucesso!', 'success');
+                    atualizarLogsUpload(data.logs || ['Upload concluído!']);
+                    setTimeout(() => {
+                        carregarServicos();
+                        fecharModal('modal-upload');
+                    }, 2000);
+                } else {
+                    toast('Erro no upload: ' + (data.erro || 'desconhecido'), 'error');
+                    atualizarLogsUpload(data.logs || ['Erro no upload']);
+                }
+            })
+            .catch(err => {
+                clearInterval(progressInterval);
+                btn.disabled = false;
+                btn.innerHTML = '<i class="bi bi-send"></i> Fazer Upload';
+                toast('Erro de conexão no upload', 'error');
+            });
+        }
+
+        function atualizarLogsUpload(logs) {
+            const box = document.getElementById('upload-logs');
+            box.innerHTML = logs.map(log => `<div class="log-line">${escapeHtml(log)}</div>`).join('');
+            box.scrollTop = box.scrollHeight;
+        }
+
+        // ==================== GIT CLONE ====================
+        
+        function abrirModalGitClone() {
+            document.getElementById('modal-git-clone').classList.add('active');
+            resetarGitClone();
+        }
+
+        function resetarGitClone() {
+            document.getElementById('git-url').value = '';
+            document.getElementById('git-nome').value = '';
+            document.getElementById('git-destino').value = '/root';
+            document.getElementById('git-branch').value = 'main';
+            document.getElementById('git-arquivo').value = 'app.py';
+            document.getElementById('git-auth').checked = false;
+            document.getElementById('git-usuario').value = '';
+            document.getElementById('git-senha').value = '';
+            document.getElementById('git-requirements').checked = true;
+            toggleGitAuth();
+            atualizarLogsGit(['Aguardando execução...']);
+        }
+
+        function toggleGitAuth() {
+            const checkbox = document.getElementById('git-auth');
+            const fields = document.getElementById('git-auth-fields');
+            fields.style.display = checkbox.checked ? 'block' : 'none';
+        }
+
+        function executarGitClone() {
+            const url = document.getElementById('git-url').value.trim();
+            const nome = document.getElementById('git-nome').value.trim();
+            const destino = document.getElementById('git-destino').value.trim();
+            const branch = document.getElementById('git-branch').value.trim();
+            const arquivo = document.getElementById('git-arquivo').value.trim();
+            const auth = document.getElementById('git-auth').checked;
+            const usuario = document.getElementById('git-usuario').value.trim();
+            const senha = document.getElementById('git-senha').value.trim();
+            const requirements = document.getElementById('git-requirements').checked;
+
+            if (!url) {
+                toast('Informe a URL do repositório', 'error');
+                return;
+            }
+
+            const btn = document.getElementById('btn-git-clone');
+            btn.disabled = true;
+            btn.innerHTML = '<span class="spinner"></span> Clonando...';
+            
+            atualizarLogsGit(['Iniciando clone do repositório...']);
+
+            fetch('/api/git-clone', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    url, nome, destino, branch, arquivo,
+                    auth, usuario, senha, requirements
+                })
+            })
+            .then(r => r.json())
+            .then(data => {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="bi bi-download"></i> Clonar Repositório';
+                
+                atualizarLogsGit(data.logs || []);
+                
+                if (data.sucesso) {
+                    toast('Repositório clonado com sucesso!', 'success');
+                    setTimeout(() => {
+                        carregarServicos();
+                        fecharModal('modal-git-clone');
+                    }, 2000);
+                } else {
+                    toast('Erro no clone: ' + (data.erro || 'desconhecido'), 'error');
+                }
+            })
+            .catch(() => {
+                btn.disabled = false;
+                btn.innerHTML = '<i class="bi bi-download"></i> Clonar Repositório';
+                toast('Erro de conexão no clone', 'error');
+            });
+        }
+
+        function atualizarLogsGit(logs) {
+            const box = document.getElementById('git-logs');
+            box.innerHTML = logs.map(log => `<div class="log-line">${escapeHtml(log)}</div>`).join('');
+            box.scrollTop = box.scrollHeight;
+        }
+
+        // ==================== TERMINAL COMPLETO ====================
+        
+        const _terminalFull = {
+            term: null,
+            fitAddon: null,
+            socket: null,
+            initialized: false,
+        };
+
+        function abrirModalTerminal() {
+            document.getElementById('modal-terminal-full').classList.add('active');
+            setTimeout(() => {
+                initTerminalFull();
+            }, 100);
+        }
+
+        function initTerminalFull() {
+            if (_terminalFull.initialized) return;
+            const container = document.getElementById('terminal-full-screen');
+            if (!container || !window.Terminal || !window.FitAddon) return;
+
+            _terminalFull.term = new Terminal({
+                convertEol: true,
+                cursorBlink: true,
+                fontFamily: 'JetBrains Mono, Fira Code, monospace',
+                fontSize: 14,
+                theme: {
+                    background: '#050a16',
+                    foreground: '#e2e8f0',
+                    cursor: '#38bdf8',
+                    selection: '#1e293b',
+                }
+            });
+            _terminalFull.fitAddon = new FitAddon.FitAddon();
+            _terminalFull.term.loadAddon(_terminalFull.fitAddon);
+            _terminalFull.term.open(container);
+            _terminalFull.fitAddon.fit();
+            
+            _terminalFull.term.onData(data => {
+                if (_terminalFull.socket) {
+                    _terminalFull.socket.emit('ssh_input', { data });
+                }
+            });
+            
+            window.addEventListener('resize', () => {
+                if (_terminalFull.fitAddon) {
+                    _terminalFull.fitAddon.fit();
+                    enviarResizeTerminalFull();
+                }
+            });
+            
+            _terminalFull.initialized = true;
+        }
+
+        function conectarTerminalFull() {
+            if (!_terminalFull.term) {
+                toast('Terminal não pôde ser inicializado.', 'error');
+                return;
+            }
+
+            if (_terminalFull.socket) {
+                _terminalFull.socket.disconnect();
+            }
+
+            _terminalFull.term.clear();
+            _terminalFull.term.writeln('\u001b[36mIniciando conexão SSH...\u001b[0m');
+            atualizarStatusTerminalFull('connecting');
+            
+            const btnConnect = document.getElementById('terminal-full-connect-btn');
+            const btnDisconnect = document.getElementById('terminal-full-disconnect-btn');
+            if (btnConnect) btnConnect.disabled = true;
+            if (btnDisconnect) btnDisconnect.disabled = true;
+
+            // Verifica se SocketIO está disponível
+            if (typeof io === 'undefined') {
+                _terminalFull.term.writeln('\u001b[31mErro: SocketIO não carregado\u001b[0m');
+                atualizarStatusTerminalFull('error');
+                if (btnConnect) btnConnect.disabled = false;
+                return;
+            }
+
+            try {
+                _terminalFull.socket = io('/ssh', {
+                    transports: ['websocket', 'polling'],
+                    timeout: 5000
+                });
+                
+                _terminalFull.socket.on('connect', () => {
+                    console.log('SocketIO conectado ao namespace /ssh');
+                    _terminalFull.term.writeln('\u001b[33m✓ SocketIO conectado\u001b[0m');
+                    _terminalFull.term.writeln('\u001b[33m→ Iniciando sessão SSH...\u001b[0m');
+                    
+                    const { cols, rows } = obterDimensoesTerminalFull();
+                    console.log('Enviando ssh_start com dimensões:', cols, rows);
+                    _terminalFull.socket.emit('ssh_start', { cols, rows });
+                });
+                
+                _terminalFull.socket.on('ssh_ready', () => {
+                    console.log('SSH pronto!');
+                    atualizarStatusTerminalFull('online');
+                    _terminalFull.term.writeln('\u001b[32m✓ SSH conectado! Digite comandos normalmente.\u001b[0m');
+                    _terminalFull.term.writeln('');
+                    if (btnDisconnect) btnDisconnect.disabled = false;
+                });
+                
+                _terminalFull.socket.on('ssh_output', payload => {
+                    if (payload?.data) {
+                        _terminalFull.term.write(payload.data);
+                    }
+                });
+                
+                _terminalFull.socket.on('ssh_error', payload => {
+                    console.error('Erro SSH:', payload);
+                    _terminalFull.term.writeln(`\r\n\u001b[31m✗ Erro SSH: ${payload?.erro || 'Erro desconhecido'}\u001b[0m`);
+                    atualizarStatusTerminalFull('error');
+                    if (btnConnect) btnConnect.disabled = false;
+                });
+                
+                _terminalFull.socket.on('connect_error', (error) => {
+                    console.error('Erro de conexão SocketIO:', error);
+                    _terminalFull.term.writeln(`\r\n\u001b[31m✗ Erro de conexão SocketIO: ${error}\u001b[0m`);
+                    atualizarStatusTerminalFull('error');
+                    if (btnConnect) btnConnect.disabled = false;
+                });
+                
+                _terminalFull.socket.on('ssh_closed', () => {
+                    _terminalFull.term.writeln('\r\n\u001b[33m→ Sessão SSH encerrada pelo servidor\u001b[0m');
+                    atualizarStatusTerminalFull('offline');
+                    if (btnDisconnect) btnDisconnect.disabled = true;
+                    if (btnConnect) btnConnect.disabled = false;
+                });
+                
+                _terminalFull.socket.on('disconnect', () => {
+                    _terminalFull.term.writeln('\r\n\u001b[33m→ Desconectado\u001b[0m');
+                    atualizarStatusTerminalFull('offline');
+                    if (btnDisconnect) btnDisconnect.disabled = true;
+                    if (btnConnect) btnConnect.disabled = false;
+                });
+
+            } catch (error) {
+                console.error('Erro ao criar socket:', error);
+                _terminalFull.term.writeln(`\u001b[31mErro ao criar conexão: ${error}\u001b[0m`);
+                atualizarStatusTerminalFull('error');
+                if (btnConnect) btnConnect.disabled = false;
+            }
+        }
+
+        function desconectarTerminalFull() {
+            if (_terminalFull.socket) {
+                _terminalFull.socket.disconnect();
+                _terminalFull.socket = null;
+            }
+            atualizarStatusTerminalFull('offline');
+            const btnConnect = document.getElementById('terminal-full-connect-btn');
+            const btnDisconnect = document.getElementById('terminal-full-disconnect-btn');
+            if (btnConnect) btnConnect.disabled = false;
+            if (btnDisconnect) btnDisconnect.disabled = true;
+            if (_terminalFull.term) {
+                _terminalFull.term.writeln('\r\n\u001b[33mSessão encerrada pelo usuário.\u001b[0m');
+            }
+        }
+
+        function atualizarStatusTerminalFull(status) {
+            const dot = document.getElementById('terminal-full-status-dot');
+            const texto = document.getElementById('terminal-full-status-text');
+            if (!dot || !texto) return;
+            
+            if (status === 'online') {
+                dot.style.background = 'var(--accent-green)';
+                texto.textContent = 'Conectado';
+            } else if (status === 'connecting') {
+                dot.style.background = 'var(--accent-yellow)';
+                texto.textContent = 'Conectando...';
+            } else if (status === 'error') {
+                dot.style.background = 'var(--accent-red)';
+                texto.textContent = 'Erro';
+            } else {
+                dot.style.background = 'var(--accent-red)';
+                texto.textContent = 'Offline';
+            }
+        }
+
+        function obterDimensoesTerminalFull() {
+            if (!_terminalFull.term) {
+                return { cols: 120, rows: 30 };
+            }
+            return { cols: _terminalFull.term.cols, rows: _terminalFull.term.rows };
+        }
+
+        function enviarResizeTerminalFull() {
+            if (_terminalFull.socket && _terminalFull.socket.connected) {
+                const { cols, rows } = obterDimensoesTerminalFull();
+                _terminalFull.socket.emit('ssh_resize', { cols, rows });
+            }
+        }
+
+        // ==================== COMANDOS RÁPIDOS ====================
+        
+        function executarComandoRapido(comando) {
+            executarComando(comando);
+        }
+
+        function executarComandoCustom() {
+            const comando = document.getElementById('comando-custom').value.trim();
+            if (!comando) {
+                toast('Digite um comando', 'error');
+                return;
+            }
+            executarComando(comando);
+            document.getElementById('comando-custom').value = '';
+        }
+
+        function executarComando(comando) {
+            const resultado = document.getElementById('resultado-comando');
+            resultado.style.display = 'block';
+            resultado.innerHTML = '<div style="color:var(--accent-yellow)"><span class="spinner"></span> Executando: ' + comando + '</div>';
+
+            fetch('/api/executar-comando', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ comando })
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.sucesso) {
+                    resultado.innerHTML = `<div style="color:var(--accent-green);margin-bottom:8px">$ ${comando}</div>${data.resultado}`;
+                } else {
+                    resultado.innerHTML = `<div style="color:var(--accent-red);margin-bottom:8px">$ ${comando}</div><div style="color:var(--accent-red)">${data.erro || 'Erro desconhecido'}</div>`;
+                }
+            })
+            .catch(() => {
+                resultado.innerHTML = `<div style="color:var(--accent-red)">Erro de conexão</div>`;
+            });
+        }
+
+        function atualizarComandos() {
+            toast('Comandos atualizados', 'info');
+        }
+
+        // ==================== TERMINAL SIMPLES ====================
+        
+        function abrirTerminalSimples() {
+            document.getElementById('terminal-full-screen').style.display = 'none';
+            document.getElementById('terminal-simples').style.display = 'block';
+            
+            const output = document.getElementById('terminal-output');
+            output.innerHTML = 'Terminal Simples SSH - Digite comandos e pressione Enter\n\n';
+            
+            document.getElementById('cmd-input').focus();
+        }
+
+        function executarComandoTerminal() {
+            const input = document.getElementById('cmd-input');
+            const output = document.getElementById('terminal-output');
+            const comando = input.value.trim();
+            
+            if (!comando) return;
+            
+            // Adiciona comando ao output
+            output.innerHTML += `$ ${comando}\n`;
+            output.scrollTop = output.scrollHeight;
+            
+            // Limpa input
+            input.value = '';
+            input.disabled = true;
+            
+            // Mostra loading
+            output.innerHTML += 'Executando...\n';
+            output.scrollTop = output.scrollHeight;
+            
+            // Executa comando
+            fetch('/api/executar-comando', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ comando })
+            })
+            .then(r => r.json())
+            .then(data => {
+                // Remove "Executando..."
+                const lines = output.innerHTML.split('\n');
+                lines.pop(); // Remove linha vazia
+                lines.pop(); // Remove "Executando..."
+                output.innerHTML = lines.join('\n') + '\n';
+                
+                if (data.sucesso) {
+                    output.innerHTML += data.resultado + '\n';
+                } else {
+                    output.innerHTML += `ERRO: ${data.erro || 'Comando falhou'}\n`;
+                }
+                output.innerHTML += '\n';
+                output.scrollTop = output.scrollHeight;
+            })
+            .catch(err => {
+                // Remove "Executando..."
+                const lines = output.innerHTML.split('\n');
+                lines.pop();
+                lines.pop();
+                output.innerHTML = lines.join('\n') + '\n';
+                
+                output.innerHTML += `ERRO DE CONEXÃO: ${err}\n\n`;
+                output.scrollTop = output.scrollHeight;
+            })
+            .finally(() => {
+                input.disabled = false;
+                input.focus();
+            });
+        }
+
+        // ==================== INICIAR SERVIÇO SIMPLES ====================
+        
+        function abrirModalIniciarServico() {
+            document.getElementById('modal-iniciar-servico').classList.add('active');
+            document.getElementById('iniciar-diretorio').value = '';
+            document.getElementById('iniciar-arquivo').value = 'app.py';
+        }
+
+        function executarIniciarServico() {
+            const diretorio = document.getElementById('iniciar-diretorio').value.trim();
+            const arquivo = document.getElementById('iniciar-arquivo').value.trim();
+
+            if (!diretorio || !arquivo) {
+                toast('Preencha diretório e arquivo!', 'error');
+                return;
+            }
+
+            fetch('/api/servico/iniciar', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ diretorio, arquivo })
+            })
+            .then(r => r.json())
+            .then(data => {
+                if (data.sucesso) {
+                    toast(data.mensagem, 'success');
+                    fecharModal('modal-iniciar-servico');
+                    setTimeout(carregarServicos, 1500);
+                } else {
+                    toast('Erro: ' + (data.erro || 'desconhecido'), 'error');
+                }
+            })
+            .catch(() => {
+                toast('Erro de conexão', 'error');
+            });
+        }
+
+        // Adicionar eventos de drag and drop para upload
+        document.addEventListener('DOMContentLoaded', function() {
+            const uploadArea = document.getElementById('upload-area');
+            if (uploadArea) {
+                uploadArea.addEventListener('dragenter', (e) => {
+                    e.preventDefault();
+                    uploadArea.classList.add('drag-over');
+                });
+                
+                uploadArea.addEventListener('dragleave', (e) => {
+                    e.preventDefault();
+                    if (!uploadArea.contains(e.relatedTarget)) {
+                        uploadArea.classList.remove('drag-over');
+                    }
+                });
+            }
+        });
+
+
+        function pararServico(pid) {
+            if (!confirm(`Parar o serviço PID ${pid}?`)) return;
+
+            fetch(`/api/servico/parar/${pid}`)
+                .then(r => r.json())
+                .then(data => {
+                    toast(data.mensagem || data.erro, data.sucesso ? 'success' : 'error');
+                    setTimeout(carregarServicos, 1500);
+                });
+        }
+
+        const _sshTerm = {
+            term: null,
+            fitAddon: null,
+            socket: null,
+            initialized: false,
+        };
+
+        function initTerminal() {
+            if (_sshTerm.initialized) return;
+            const container = document.getElementById('terminal-screen');
+            if (!container || !window.Terminal || !window.FitAddon) return;
+
+            _sshTerm.term = new Terminal({
+                convertEol: true,
+                cursorBlink: true,
+                fontFamily: 'JetBrains Mono, Fira Code, monospace',
+                fontSize: 14,
+                theme: {
+                    background: '#050a16',
+                    foreground: '#e2e8f0',
+                    cursor: '#38bdf8',
+                    selection: '#1e293b',
+                }
+            });
+            _sshTerm.fitAddon = new FitAddon.FitAddon();
+            _sshTerm.term.loadAddon(_sshTerm.fitAddon);
+            _sshTerm.term.open(container);
+            _sshTerm.fitAddon.fit();
+            _sshTerm.term.onData(data => {
+                if (_sshTerm.socket) {
+                    _sshTerm.socket.emit('ssh_input', { data });
+                }
+            });
+            window.addEventListener('resize', () => {
+                if (_sshTerm.fitAddon) {
+                    _sshTerm.fitAddon.fit();
+                    enviarResizeTerminal();
+                }
+            });
+            _sshTerm.initialized = true;
+        }
+
+        function obterDimensoesTerminal() {
+            if (!_sshTerm.term) {
+                return { cols: 120, rows: 30 };
+            }
+            return { cols: _sshTerm.term.cols, rows: _sshTerm.term.rows };
+        }
+
+        function enviarResizeTerminal() {
+            if (_sshTerm.socket && _sshTerm.socket.connected) {
+                const { cols, rows } = obterDimensoesTerminal();
+                _sshTerm.socket.emit('ssh_resize', { cols, rows });
+            }
+        }
+
+        function atualizarStatusTerminal(status) {
+            const dot = document.getElementById('terminal-status-dot');
+            const texto = document.getElementById('terminal-status-text');
+            if (!dot || !texto) return;
+            if (status === 'online') {
+                dot.style.background = 'var(--accent-green)';
+                texto.textContent = 'Conectado';
+            } else if (status === 'connecting') {
+                dot.style.background = 'var(--accent-yellow)';
+                texto.textContent = 'Conectando...';
+            } else if (status === 'error') {
+                dot.style.background = 'var(--accent-red)';
+                texto.textContent = 'Erro';
+            } else {
+                dot.style.background = 'var(--accent-red)';
+                texto.textContent = 'Offline';
+            }
+        }
+
+        function conectarTerminal() {
+            initTerminal();
+            if (!_sshTerm.term) {
+                toast('Terminal não pôde ser inicializado.', 'error');
+                return;
+            }
+
+            if (_sshTerm.socket) {
+                _sshTerm.socket.disconnect();
+            }
+
+            _sshTerm.term.clear();
+            _sshTerm.term.writeln('\u001b[36mAbrindo sessão SSH...\u001b[0m');
+            atualizarStatusTerminal('connecting');
+            const btnConnect = document.getElementById('terminal-connect-btn');
+            const btnDisconnect = document.getElementById('terminal-disconnect-btn');
+            if (btnConnect) btnConnect.disabled = true;
+            if (btnDisconnect) btnDisconnect.disabled = true;
+
+            _sshTerm.socket = io('/ssh');
+            _sshTerm.socket.on('connect', () => {
+                const { cols, rows } = obterDimensoesTerminal();
+                _sshTerm.socket.emit('ssh_start', { cols, rows });
+            });
+            _sshTerm.socket.on('ssh_ready', () => {
+                atualizarStatusTerminal('online');
+                _sshTerm.term.writeln('\u001b[32mSessão pronta. Use como um terminal normal.\u001b[0m');
+                if (btnDisconnect) btnDisconnect.disabled = false;
+            });
+            _sshTerm.socket.on('ssh_output', payload => {
+                if (payload?.data) {
+                    _sshTerm.term.write(payload.data);
+                }
+            });
+            _sshTerm.socket.on('ssh_error', payload => {
+                _sshTerm.term.writeln(`\r\n\u001b[31m${payload?.erro || 'Erro desconhecido'}\u001b[0m`);
+                atualizarStatusTerminal('error');
+                if (btnConnect) btnConnect.disabled = false;
+            });
+            _sshTerm.socket.on('ssh_closed', () => {
+                _sshTerm.term.writeln('\r\n\u001b[33mSessão encerrada pelo servidor.\u001b[0m');
+                atualizarStatusTerminal('offline');
+                if (btnDisconnect) btnDisconnect.disabled = true;
+                if (btnConnect) btnConnect.disabled = false;
+            });
+            _sshTerm.socket.on('disconnect', () => {
+                atualizarStatusTerminal('offline');
+                if (btnDisconnect) btnDisconnect.disabled = true;
+                if (btnConnect) btnConnect.disabled = false;
+            });
+        }
+
+        function desconectarTerminal() {
+            if (_sshTerm.socket) {
+                _sshTerm.socket.disconnect();
+                _sshTerm.socket = null;
+            }
+            atualizarStatusTerminal('offline');
+            const btnConnect = document.getElementById('terminal-connect-btn');
+            const btnDisconnect = document.getElementById('terminal-disconnect-btn');
+            if (btnConnect) btnConnect.disabled = false;
+            if (btnDisconnect) btnDisconnect.disabled = true;
+            if (_sshTerm.term) {
+                _sshTerm.term.writeln('\r\n\u001b[33mSessão encerrada pelo usuário.\u001b[0m');
+            }
+        }
+
+        function carregarPostgres() {
+            document.getElementById('postgres-info').innerHTML = '<div style="text-align:center;padding:20px"><span class="spinner"></span></div>';
+
+            fetch('/api/postgres/status')
+                .then(r => r.json())
+                .then(data => {
+                    if (data.sucesso) {
+                        document.getElementById('postgres-info').innerHTML = `
+                            <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+                                <div class="pulse" style="color:var(--accent-green)"></div>
+                                <strong style="color:var(--accent-green)">PostgreSQL Online</strong>
+                                <span style="color:var(--text-secondary);font-size:0.85rem">— ${data.versao}</span>
+                            </div>
+                            <div class="terminal-output">${data.status}</div>
+                        `;
+                    } else {
+                        document.getElementById('postgres-info').innerHTML = `
+                            <div style="display:flex;align-items:center;gap:10px">
+                                <div class="pulse" style="color:var(--accent-red)"></div>
+                                <strong style="color:var(--accent-red)">PostgreSQL Offline</strong>
+                                <span style="color:var(--text-secondary);font-size:0.85rem">— ${data.erro || 'Erro'}</span>
+                            </div>
+                        `;
+                    }
+                });
+        }
+
+        function carregarBancosDados() {
+            const div = document.getElementById('postgres-databases');
+            div.innerHTML = '<div style="text-align:center;padding:20px"><span class="spinner"></span></div>';
+
+            fetch('/api/postgres/databases')
+                .then(r => r.json())
+                .then(data => {
+                    if (data.sucesso && data.bancos && data.bancos.length > 0) {
+                        let html = '<table class="db-table" style="margin-top:16px"><thead><tr><th>Nome</th><th>Dono</th><th>Encoding</th></tr></thead><tbody>';
+                        data.bancos.forEach(b => {
+                            html += `<tr><td><strong>${b.nome}</strong></td><td>${b.dono}</td><td>${b.encoding}</td></tr>`;
+                        });
+                        html += '</tbody></table>';
+                        div.innerHTML = html;
+                    } else {
+                        div.innerHTML = '<div style="color:var(--text-secondary);padding:12px">Não foi possível listar bancos</div>';
+                    }
+                });
+        }
+
+        document.querySelectorAll('.modal-overlay').forEach(modal => {
+            modal.addEventListener('click', (e) => {
+                if (e.target === modal) modal.classList.remove('active');
+            });
+        });
+
+        setInterval(() => {
+            carregarServicos();
+            testarConexao();
+        }, 30000);
+
+        // ==================== BACKUP ====================
+
+        // Estado do explorador de backup
+        const _bk = {
+            dirVps: '',       // pasta VPS selecionada (origem)
+            dirWin: '',       // pasta Windows selecionada (destino)
+            nomeApp: '',
+        };
+
+        function abrirBackupGeral() {
+            _bk.nomeApp = '';
+            _bk.dirVps = '/';
+            _bk.dirWin = '';
+            document.getElementById('bk-titulo-app').textContent = 'manual';
+            document.getElementById('modal-backup').classList.add('active');
+            _bkAtualizarResumo();
+            _bkNavVps('/');
+            fetch('/api/backup/config')
+                .then(r => r.json())
+                .then(data => {
+                    const pasta = data.pasta || '';
+                    _bk.dirWin = pasta;
+                    _bkNavWin(pasta);
+                });
+        }
+
+        function fazerBackup(diretorio, nome) {
+            _bk.nomeApp = nome;
+            // Origem pré-selecionada = diretório da aplicação
+            _bk.dirVps = diretorio;
+            _bk.dirWin = '';
+
+            document.getElementById('bk-titulo-app').textContent = nome;
+            document.getElementById('modal-backup').classList.add('active');
+
+            // Carrega lado VPS a partir do diretório da aplicação
+            _bkNavVps(diretorio);
+
+            // Carrega lado Windows a partir da pasta salva anteriormente
+            fetch('/api/backup/config')
+                .then(r => r.json())
+                .then(data => {
+                    const pasta = data.pasta || '';
+                    _bk.dirWin = pasta;
+                    _bkNavWin(pasta);
+                });
+        }
+
+        function _bkItemHtml(icone, cor, nome, onclick, lado, caminho) {
+            const pathEnc = (caminho !== undefined && caminho !== null) ? encodeURIComponent(String(caminho)) : '';
+            const dragAttr = (lado && caminho) ? `draggable="true" ondragstart="bkDragStart(event,'${lado}','${pathEnc}')"` : '';
+            return `<div ${dragAttr} onclick="${onclick}"
+                style="display:flex;align-items:center;gap:8px;padding:6px 10px;border-radius:6px;cursor:pointer;font-size:0.82rem;transition:background 0.15s"
+                onmouseover="this.style.background='rgba(255,255,255,0.05)'"
+                onmouseout="this.style.background='transparent'">
+                <i class="bi bi-${icone}" style="color:${cor};flex-shrink:0"></i>
+                <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${nome}</span>
+            </div>`;
+        }
+
+        function bkDragStart(e, lado, caminhoEnc) {
+            if (!e || !e.dataTransfer) return;
+            const caminho = decodeURIComponent(caminhoEnc || '');
+            e.dataTransfer.setData('bk-lado', lado || '');
+            e.dataTransfer.setData('bk-path', caminho || '');
+        }
+
+        function bkDropOrigem(e) {
+            e.preventDefault();
+            const lado = e.dataTransfer.getData('bk-lado');
+            const caminho = e.dataTransfer.getData('bk-path');
+            if (lado === 'vps' && caminho) {
+                _bkSelecionarVps(caminho);
+            }
+        }
+
+        function bkDropDestino(e) {
+            e.preventDefault();
+            const lado = e.dataTransfer.getData('bk-lado');
+            const caminho = e.dataTransfer.getData('bk-path');
+            if (lado === 'win' && caminho) {
+                _bkSelecionarWin(caminho);
+            }
+        }
+
+        function _bkNavVps(caminho) {
+            const lista = document.getElementById('bk-vps-lista');
+            lista.innerHTML = '<div style="padding:12px;color:var(--text-secondary);font-size:0.8rem"><span class="spinner" style="width:14px;height:14px"></span> Carregando...</div>';
+
+            fetch(`/api/backup/listar-vps?caminho=${encodeURIComponent(caminho)}`)
+                .then(r => r.json())
+                .then(data => {
+                    if (!data.sucesso) {
+                        lista.innerHTML = `<div style="padding:10px;color:var(--accent-red);font-size:0.8rem">${data.erro}</div>`;
+                        return;
+                    }
+
+                    document.getElementById('bk-vps-breadcrumb').textContent = data.caminho;
+                    _bk.dirVps = data.caminho;
+                    _bkAtualizarResumo();
+
+                    let html = '';
+
+                    // Botão voltar
+                    if (data.caminho !== '/' && data.pai) {
+                        html += _bkItemHtml('arrow-up-circle', 'var(--text-secondary)', '..  (voltar)', `_bkNavVps('${data.pai}')`, 'vps', data.pai);
+                    }
+
+                    // Pasta atual selecionada (destacada)
+                    html += `<div onclick="_bkSelecionarVps('${data.caminho.replace(/'/g, "\\'")}')"
+                        style="display:flex;align-items:center;gap:8px;padding:6px 10px;border-radius:6px;cursor:pointer;font-size:0.82rem;
+                               background:rgba(6,182,212,0.12);border:1px solid rgba(6,182,212,0.3);margin-bottom:4px"
+                        title="Selecionar esta pasta como origem">
+                        <i class="bi bi-folder2-open" style="color:var(--accent-cyan);flex-shrink:0"></i>
+                        <span style="color:var(--accent-cyan);font-weight:600">${data.caminho.split('/').pop() || '/'}</span>
+                        <span style="font-size:0.7rem;color:var(--text-secondary);margin-left:auto">← selecionar</span>
+                    </div>`;
+
+                    // Subpastas
+                    if (data.pastas.length === 0) {
+                        html += `<div style="padding:10px;color:var(--text-secondary);font-size:0.78rem">Sem subpastas</div>`;
+                    } else {
+                        data.pastas.forEach(p => {
+                            const camSub = data.caminho.replace(/\/$/, '') + '/' + p;
+                            html += _bkItemHtml('folder', 'var(--accent-yellow)', p, `_bkNavVps('${camSub.replace(/'/g, "\\'")}')`, 'vps', camSub);
+                        });
+                    }
+
+                    lista.innerHTML = html;
+                })
+                .catch(() => {
+                    lista.innerHTML = `<div style="padding:10px;color:var(--accent-red);font-size:0.8rem">Erro ao listar</div>`;
+                });
+        }
+
+        function _bkSelecionarVps(caminho) {
+            _bk.dirVps = caminho;
+            document.getElementById('bk-vps-breadcrumb').textContent = caminho;
+            _bkAtualizarResumo();
+            _bkNavVps(caminho);
+        }
+
+        function _bkNavWin(caminho) {
+            const lista = document.getElementById('bk-win-lista');
+            lista.innerHTML = '<div style="padding:12px;color:var(--text-secondary);font-size:0.8rem"><span class="spinner" style="width:14px;height:14px"></span> Carregando...</div>';
+
+            fetch(`/api/backup/listar-windows?caminho=${encodeURIComponent(caminho)}`)
+                .then(r => r.json())
+                .then(data => {
+                    if (!data.sucesso) {
+                        lista.innerHTML = `<div style="padding:10px;color:var(--accent-red);font-size:0.8rem">${data.erro}</div>`;
+                        return;
+                    }
+
+                    const label = data.caminho || 'Drives disponíveis';
+                    document.getElementById('bk-win-breadcrumb').textContent = label;
+
+                    // Pasta atual como destino selecionado
+                    if (data.caminho) {
+                        _bk.dirWin = data.caminho;
+                        _bkAtualizarResumo();
+                    }
+
+                    let html = '';
+
+                    // Botão voltar para drives
+                    if (!data.caminho) {
+                        // raiz — sem voltar
+                    } else if (!data.pai || data.pai === data.caminho) {
+                        html += _bkItemHtml('arrow-up-circle', 'var(--text-secondary)', '..  (drives)', `_bkNavWin('')`, 'win', '');
+                    } else {
+                        html += _bkItemHtml('arrow-up-circle', 'var(--text-secondary)', '..  (voltar)', `_bkNavWin('${data.pai.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}')`, 'win', data.pai);
+                    }
+
+                    // Pasta atual como destino (se não for raiz de drives)
+                    if (data.caminho) {
+                        const nomePastaAtual = data.caminho.replace(/[/\\]+$/, '').split(/[/\\]/).pop() || data.caminho;
+                        html += `<div onclick="_bkSelecionarWin('${data.caminho.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}')"
+                            style="display:flex;align-items:center;gap:8px;padding:6px 10px;border-radius:6px;cursor:pointer;font-size:0.82rem;
+                                   background:rgba(59,130,246,0.12);border:1px solid rgba(59,130,246,0.3);margin-bottom:4px"
+                            title="Selecionar esta pasta como destino">
+                            <i class="bi bi-folder2-open" style="color:var(--accent-blue);flex-shrink:0"></i>
+                            <span style="color:var(--accent-blue);font-weight:600">${nomePastaAtual}</span>
+                            <span style="font-size:0.7rem;color:var(--text-secondary);margin-left:auto">← selecionar</span>
+                        </div>`;
+                    }
+
+                    // Subpastas / drives
+                    if (data.pastas.length === 0) {
+                        html += `<div style="padding:10px;color:var(--text-secondary);font-size:0.78rem">Sem subpastas</div>`;
+                    } else {
+                        data.pastas.forEach(p => {
+                            const caminho_p = p.caminho || p;
+                            const nome_p = p.nome || p;
+                            const icone = !data.caminho ? 'device-hdd' : 'folder';
+                            const cor = !data.caminho ? 'var(--accent-purple)' : 'var(--accent-blue)';
+                            html += _bkItemHtml(icone, cor, nome_p,
+                                `_bkNavWin('${caminho_p.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}')`, 'win', caminho_p);
+                        });
+                    }
+
+                    lista.innerHTML = html;
+                })
+                .catch(() => {
+                    lista.innerHTML = `<div style="padding:10px;color:var(--accent-red);font-size:0.8rem">Erro ao listar</div>`;
+                });
+        }
+
+        function _bkSelecionarWin(caminho) {
+            _bk.dirWin = caminho;
+            _bkAtualizarResumo();
+            _bkNavWin(caminho);
+        }
+
+        function _bkAtualizarResumo() {
+            document.getElementById('bk-resumo-origem').textContent = _bk.dirVps || '—';
+            document.getElementById('bk-resumo-destino').textContent = _bk.dirWin || '—';
+            document.getElementById('bk-btn-executar').disabled = !(_bk.dirVps && _bk.dirWin);
+        }
+
+        function _bkInitDropzones() {
+            const origem = document.getElementById('bk-resumo-origem');
+            const destino = document.getElementById('bk-resumo-destino');
+            const over = (e) => { e.preventDefault(); e.currentTarget.style.outline = '2px dashed var(--accent-yellow)'; };
+            const leave = (e) => { e.currentTarget.style.outline = 'none'; };
+            if (origem) {
+                origem.addEventListener('dragover', over);
+                origem.addEventListener('dragleave', leave);
+                origem.addEventListener('drop', (e) => { leave(e); bkDropOrigem(e); });
+            }
+            if (destino) {
+                destino.addEventListener('dragover', over);
+                destino.addEventListener('dragleave', leave);
+                destino.addEventListener('drop', (e) => { leave(e); bkDropDestino(e); });
+            }
+        }
+
+        function executarBackup() {
+            if (!_bk.dirVps || !_bk.dirWin) return;
+
+            const btn = document.getElementById('bk-btn-executar');
+            const originalHtml = btn.innerHTML;
+            btn.innerHTML = '<span class="spinner"></span> Fazendo backup...';
+            btn.disabled = true;
+
+            // Salva pasta destino para próxima vez
+            fetch('/api/backup/config', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ pasta: _bk.dirWin })
+            });
+
+            fetch('/api/backup/servico', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ diretorio: _bk.dirVps, nome: _bk.nomeApp, pasta_destino: _bk.dirWin })
+            })
+            .then(r => r.json())
+            .then(data => {
+                btn.innerHTML = originalHtml;
+                btn.disabled = false;
+                document.getElementById('modal-backup').classList.remove('active');
+
+                if (data.sucesso) {
+                    document.getElementById('backup-result-content').innerHTML = `
+                        <div style="display:grid;gap:12px;">
+                            <div style="display:flex;align-items:center;gap:10px;padding:14px;background:rgba(34,197,94,0.08);border:1px solid rgba(34,197,94,0.25);border-radius:8px;">
+                                <i class="bi bi-check-circle-fill" style="color:var(--accent-green);font-size:1.4rem"></i>
+                                <div>
+                                    <div style="font-weight:600;color:var(--accent-green)">Backup salvo com sucesso!</div>
+                                    <div style="font-size:0.8rem;color:var(--text-secondary);margin-top:2px">${data.tamanho_mb} MB comprimido</div>
+                                </div>
+                            </div>
+                            <div style="padding:12px;background:rgba(0,0,0,0.2);border-radius:8px;">
+                                <div style="color:var(--text-secondary);font-size:0.75rem;margin-bottom:4px">Arquivo</div>
+                                <code style="color:var(--accent-cyan)">${data.arquivo}</code>
+                            </div>
+                            <div style="padding:12px;background:rgba(0,0,0,0.2);border-radius:8px;">
+                                <div style="color:var(--text-secondary);font-size:0.75rem;margin-bottom:4px">Salvo em</div>
+                                <code style="color:var(--accent-blue);word-break:break-all">${data.caminho}</code>
+                            </div>
+                        </div>
+                    `;
+                    document.getElementById('modal-backup-result').classList.add('active');
+                    toast('Backup concluído!', 'success');
+                } else {
+                    toast('Erro no backup: ' + (data.erro || 'desconhecido'), 'error');
+                }
+            })
+            .catch(() => {
+                btn.innerHTML = originalHtml;
+                btn.disabled = false;
+                toast('Erro de conexão ao fazer backup', 'error');
+            });
+        }
+
+        // =============================================
+
+        window.onload = function () {
+            testarConexao();
+            carregarSistemaInfo();
+            carregarSistemas();
+            _bkInitDropzones();
+            setTimeout(initTerminal, 300);
+        };
+    </script>
+</body>
+</html>
