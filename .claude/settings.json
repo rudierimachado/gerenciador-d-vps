@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pip install flask-sock==0.7.0)",
+      "Bash(pip install gevent)",
+      "Bash(pip install gevent-websocket)"
+    ]
+  }
+}

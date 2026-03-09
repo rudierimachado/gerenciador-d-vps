@@ -19,10 +19,12 @@ from flask import (
     stream_with_context,
     url_for,
 )
+from flask_sock import Sock
 
 load_dotenv()
 
 app = Flask(__name__)
+sock = Sock(app)
 
 SSH_CONFIG = {
     "host": os.getenv("SSH_HOST"),
@@ -586,11 +588,19 @@ def login_page():
         username = request.form.get("username", "").strip()
         password = request.form.get("password", "")
         if username == ADMIN_USER and password == ADMIN_PASSWORD:
+            import secrets as _secrets
             session["logged_in"] = True
             session["username"] = username
+            session["ws_token"] = _secrets.token_hex(16)
             return redirect(url_for("dashboard"))
         error = "Usuário ou senha incorretos."
     return render_template("login.html", error=error)
+
+
+@app.get("/api/ws-token")
+@login_required
+def api_ws_token():
+    return jsonify({"token": session.get("ws_token", "")})
 
 
 @app.route("/logout")
@@ -822,5 +832,75 @@ def api_restart_app():
         return jsonify({"status": "error", "message": str(exc)}), 500
 
 
+@sock.route("/api/terminal")
+def api_terminal(ws):
+    import json as _json
+    import threading as _threading
+    import time as _time
+
+    # Auth
+    if not session.get("logged_in"):
+        ws.close()
+        return
+
+    try:
+        data = ws.receive()
+        payload = _json.loads(data)
+        project_path = payload.get("path", "").strip()
+        token = payload.get("token", "")
+    except Exception:
+        ws.close()
+        return
+
+    expected = session.get("ws_token", "")
+    if not expected or token != expected:
+        ws.send("\r\n[erro] Não autorizado.\r\n")
+        ws.close()
+        return
+
+    client = _get_ssh_client()
+    channel = client.invoke_shell(term="xterm", width=220, height=50)
+
+    if project_path and project_path.startswith("/"):
+        channel.send(f"cd {shlex.quote(project_path)}\n")
+
+    alive = _threading.Event()
+    alive.set()
+
+    # Thread dedicada apenas para ws.receive() → SSH
+    def _ws_reader():
+        try:
+            while alive.is_set():
+                msg = ws.receive()
+                if msg is None:
+                    break
+                channel.send(msg)
+        except Exception:
+            pass
+        alive.clear()
+
+    t = _threading.Thread(target=_ws_reader, daemon=True)
+    t.start()
+
+    # Loop principal: SSH → ws.send() (só esta thread chama ws.send)
+    try:
+        while alive.is_set():
+            if channel.recv_ready():
+                chunk = channel.recv(4096)
+                if not chunk:
+                    break
+                ws.send(chunk.decode("utf-8", errors="replace"))
+            elif channel.closed:
+                break
+            else:
+                _time.sleep(0.05)
+    except Exception:
+        pass
+    finally:
+        alive.clear()
+        channel.close()
+        client.close()
+
+
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.getenv("PORT", "5009")), debug=True)
+    app.run(host="0.0.0.0", port=int(os.getenv("PORT", "5009")), debug=False, threaded=True)

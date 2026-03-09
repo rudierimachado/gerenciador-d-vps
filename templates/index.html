@@ -5,6 +5,43 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Monitoramento VPS - {{ vps_identifier }}</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.min.css">
+    <style>
+        #terminal-modal {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,.7);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+        }
+        #terminal-modal.open { display: flex; }
+        #terminal-box {
+            background: #1e1e1e;
+            border-radius: 8px;
+            padding: 12px;
+            width: 90vw;
+            max-width: 1000px;
+        }
+        #terminal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+            color: #ccc;
+            font-size: .85rem;
+        }
+        #terminal-close {
+            background: #555;
+            color: #fff;
+            border: none;
+            border-radius: 4px;
+            padding: 4px 10px;
+            cursor: pointer;
+        }
+        #terminal-container { width: 100%; }
+    </style>
 </head>
 <body>
     <header>
@@ -171,6 +208,13 @@
                                                 data-pid="{{ app.pid }}"
                                             >Logs</button>
                                             <button
+                                                class="mini"
+                                                data-action="open-terminal"
+                                                data-path="{{ app.path or '' }}"
+                                                data-name="{{ app.name }}"
+                                                style="background:#6c5ce7;color:#fff;"
+                                            >Terminal</button>
+                                            <button
                                                 class="mini secondary"
                                                 data-action="update-project"
                                                 data-pid="{{ app.pid }}"
@@ -188,11 +232,24 @@
                                         {% else %}
                                             <button
                                                 class="mini secondary"
+                                                data-action="update-project"
+                                                data-path="{{ app.path or '' }}"
+                                                {% if not app.path %}disabled title="Caminho não identificado"{% endif %}
+                                            >Atualizar</button>
+                                            <button
+                                                class="mini secondary"
                                                 data-action="start-project"
                                                 data-path="{{ app.path or '' }}"
                                                 data-start-file="{{ app.start_file or '' }}"
                                                 {% if not app.start_file %}disabled title="Nenhum arquivo de start detectado"{% endif %}
                                             >Iniciar</button>
+                                            <button
+                                                class="mini"
+                                                data-action="open-terminal"
+                                                data-path="{{ app.path or '' }}"
+                                                data-name="{{ app.name }}"
+                                                style="background:#6c5ce7;color:#fff;"
+                                            >Terminal</button>
                                         {% endif %}
                                     </div>
                                 </td>
@@ -249,6 +306,19 @@
     <footer>
         <p>Atualização automática a cada 60 segundos</p>
     </footer>
+
+    <div id="terminal-modal">
+        <div id="terminal-box">
+            <div id="terminal-header">
+                <span id="terminal-title">Terminal</span>
+                <button id="terminal-close">✕ Fechar</button>
+            </div>
+            <div id="terminal-container"></div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.min.js"></script>
 
     <script>
         const logPanel = document.getElementById('log-viewer');
@@ -462,6 +532,75 @@
                 `Logs em tempo real — PID ${pid}`
             );
         }
+
+        // ── Terminal WebSocket ──────────────────────────────────────────
+        let termInstance = null;
+        let termSocket = null;
+
+        const termModal = document.getElementById('terminal-modal');
+        const termTitle = document.getElementById('terminal-title');
+        const termClose = document.getElementById('terminal-close');
+        const termContainer = document.getElementById('terminal-container');
+
+        async function openTerminal(projectPath, projectName) {
+            if (termInstance) {
+                termInstance.dispose();
+                termInstance = null;
+            }
+            if (termSocket) {
+                termSocket.close();
+                termSocket = null;
+            }
+            termContainer.innerHTML = '';
+
+            termTitle.textContent = 'Terminal — ' + (projectName || projectPath);
+            termModal.classList.add('open');
+
+            const term = new Terminal({ cursorBlink: true, fontSize: 14, theme: { background: '#1e1e1e' } });
+            const fitAddon = new FitAddon.FitAddon();
+            term.loadAddon(fitAddon);
+            term.open(termContainer);
+            fitAddon.fit();
+            termInstance = term;
+
+            let wsToken = '';
+            try {
+                const r = await fetch('/api/ws-token');
+                const j = await r.json();
+                wsToken = j.token || '';
+            } catch(e) {
+                term.write('\r\n\x1b[31m[erro] Falha ao obter token.\x1b[0m\r\n');
+                return;
+            }
+
+            const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+            const ws = new WebSocket(`${proto}://${location.host}/api/terminal`);
+            termSocket = ws;
+
+            ws.onopen = () => {
+                ws.send(JSON.stringify({ path: projectPath, token: wsToken }));
+            };
+            ws.onmessage = (e) => term.write(e.data);
+            ws.onclose = () => term.write('\r\n\x1b[31m[conexão encerrada]\x1b[0m\r\n');
+
+            term.onData((data) => {
+                if (ws.readyState === WebSocket.OPEN) ws.send(data);
+            });
+
+            window.addEventListener('resize', () => fitAddon.fit());
+        }
+
+        termClose.addEventListener('click', () => {
+            termModal.classList.remove('open');
+            if (termSocket) { termSocket.close(); termSocket = null; }
+            if (termInstance) { termInstance.dispose(); termInstance = null; }
+            termContainer.innerHTML = '';
+        });
+
+        document.querySelectorAll('[data-action="open-terminal"]').forEach((btn) => {
+            btn.addEventListener('click', () => openTerminal(btn.dataset.path, btn.dataset.name));
+        });
+        // ───────────────────────────────────────────────────────────────
 
         hydrateProgressBars();
         document.querySelectorAll('[data-action="view-logs"]').forEach((button) =>
