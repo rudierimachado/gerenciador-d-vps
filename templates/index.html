@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Monitoramento VPS - {{ vps_identifier }}</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <header>
+        <div class="branding">
+            <h1>Monitoramento VPS</h1>
+            <p class="identifier">ID: {{ vps_identifier }}</p>
+        </div>
+        <a href="/logout" class="btn-logout">Sair</a>
+    </header>
+
+    {% if error %}
+        <section class="card error">
+            <h2>Erro ao coletar métricas</h2>
+            <pre>{{ error }}</pre>
+        </section>
+    {% elif metrics %}
+        <section class="grid stats">
+            <article class="card">
+                <h3>Identidade</h3>
+                <ul>
+                    <li><span>Hostname</span><strong>{{ metrics.hostname }}</strong></li>
+                    <li><span>Kernel</span><strong>{{ metrics.kernel }}</strong></li>
+                    <li><span>Uptime</span><strong>{{ metrics.uptime }}</strong></li>
+                </ul>
+            </article>
+            <article class="card">
+                <h3>Carga</h3>
+                <div class="load-values">
+                    {% for value in metrics.load_average %}
+                        <div>
+                            <span>{{ loop.index }} min</span>
+                            <strong>{{ value }}</strong>
+                        </div>
+                    {% endfor %}
+                </div>
+            </article>
+            <article class="card">
+                <h3>Disco</h3>
+                <p class="value">{{ metrics.disk.used }} / {{ metrics.disk.size }}</p>
+                <div class="progress" data-progress="{{ metrics.disk.usage_percent_value }}">
+                    <div></div>
+                </div>
+                <small>{{ metrics.disk.use_percent }} usados em {{ metrics.disk.mount }}</small>
+            </article>
+        </section>
+
+        <section class="grid stats">
+            <article class="card">
+                <h3>Memória RAM</h3>
+                <p class="value">{{ metrics.memory.used }} / {{ metrics.memory.total }} MB</p>
+                <div class="progress" data-progress="{{ metrics.memory.usage_percent }}">
+                    <div></div>
+                </div>
+                <small>{{ metrics.memory.usage_percent }}% em uso</small>
+            </article>
+            <article class="card">
+                <h3>Swap</h3>
+                <p class="value">{{ metrics.swap.used }} / {{ metrics.swap.total }} MB</p>
+                <div class="progress" data-progress="{{ metrics.swap.usage_percent }}">
+                    <div></div>
+                </div>
+                <small>{{ metrics.swap.usage_percent }}% em uso</small>
+            </article>
+            <article class="card">
+                <h3>Horário</h3>
+                <p class="value">{{ metrics.retrieved_at | replace('T', ' ') }}</p>
+                <small>UTC</small>
+            </article>
+        </section>
+
+        <section class="card table-wrapper">
+            <div class="section-header">
+                <h3>Processos com maior uso de CPU</h3>
+                <span>Top 5</span>
+            </div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>PID</th>
+                        <th>Comando</th>
+                        <th>CPU %</th>
+                        <th>Mem %</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for process in metrics.processes %}
+                        <tr>
+                            <td>{{ process.pid }}</td>
+                            <td>{{ process.command }}</td>
+                            <td>{{ process.cpu }}</td>
+                            <td>{{ process.mem }}</td>
+                        </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </section>
+
+        <section class="card table-wrapper">
+            <div class="section-header">
+                <h3>Aplicações</h3>
+                <div style="display:flex;gap:.5rem;align-items:center;">
+                    <span>{{ metrics.applications | selectattr('status','eq','running') | list | length }} ativas</span>
+                    {% if metrics.applications | selectattr('status','eq','stopped') | list | length > 0 %}
+                        <span class="badge-stopped">{{ metrics.applications | selectattr('status','eq','stopped') | list | length }} paradas</span>
+                    {% endif %}
+                    <button class="mini secondary" id="btn-novo-projeto">+ Novo Projeto</button>
+                </div>
+            </div>
+
+            <div id="clone-form" class="clone-form hidden">
+                <div class="clone-form-fields">
+                    <div class="clone-field">
+                        <label for="clone-url">URL do repositório Git</label>
+                        <input type="text" id="clone-url" placeholder="https://github.com/usuario/repo.git" autocomplete="off">
+                    </div>
+                    <div class="clone-field">
+                        <label for="clone-folder">Nome da pasta</label>
+                        <input type="text" id="clone-folder" placeholder="meu-sistema" autocomplete="off">
+                    </div>
+                </div>
+                <div style="display:flex;gap:.5rem;margin-top:.75rem;">
+                    <button class="mini secondary" id="btn-clone-submit">Clonar e criar pasta</button>
+                    <button class="mini neutral" id="btn-clone-cancel">Cancelar</button>
+                </div>
+            </div>
+            {% if metrics.applications %}
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Sistema</th>
+                            <th>Status</th>
+                            <th>PID</th>
+                            <th>CPU %</th>
+                            <th>Mem %</th>
+                            <th>Arquivo start</th>
+                            <th>Ações</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for app in metrics.applications %}
+                            <tr>
+                                <td>
+                                    <strong>{{ app.name }}</strong>
+                                    <br>
+                                    <small class="muted">{{ app.path or '—' }}</small>
+                                </td>
+                                <td>
+                                    {% if app.status == 'running' %}
+                                        <span class="badge-running">Ativo</span>
+                                    {% else %}
+                                        <span class="badge-stopped">Parado</span>
+                                    {% endif %}
+                                </td>
+                                <td>{{ app.pid or '—' }}</td>
+                                <td>{{ app.cpu if app.cpu is not none else '—' }}</td>
+                                <td>{{ app.mem if app.mem is not none else '—' }}</td>
+                                <td><code>{{ app.start_file or '—' }}</code></td>
+                                <td>
+                                    <div class="row-actions">
+                                        {% if app.status == 'running' %}
+                                            <button
+                                                class="mini info"
+                                                data-action="view-logs"
+                                                data-pid="{{ app.pid }}"
+                                            >Logs</button>
+                                            <button
+                                                class="mini secondary"
+                                                data-action="update-project"
+                                                data-pid="{{ app.pid }}"
+                                                data-path="{{ app.path or '' }}"
+                                                {% if not app.path %}disabled title="Caminho não identificado"{% endif %}
+                                            >Atualizar</button>
+                                            <button
+                                                class="mini danger"
+                                                data-action="restart"
+                                                data-pid="{{ app.pid }}"
+                                                data-path="{{ app.path or '' }}"
+                                                data-command="{{ app.command or '' }}"
+                                                {% if not app.path %}disabled title="Caminho não identificado"{% endif %}
+                                            >Reiniciar</button>
+                                        {% else %}
+                                            <button
+                                                class="mini secondary"
+                                                data-action="start-project"
+                                                data-path="{{ app.path or '' }}"
+                                                data-start-file="{{ app.start_file or '' }}"
+                                                {% if not app.start_file %}disabled title="Nenhum arquivo de start detectado"{% endif %}
+                                            >Iniciar</button>
+                                        {% endif %}
+                                    </div>
+                                </td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            {% else %}
+                <p class="muted">Nenhuma aplicação identificada.</p>
+            {% endif %}
+        </section>
+
+        <section id="log-viewer" class="card log-panel hidden">
+            <div class="section-header">
+                <div>
+                    <h3 id="log-title">Logs da atualização</h3>
+                    <small class="muted">Saída em tempo real</small>
+                </div>
+                <button class="mini neutral" id="log-close">Fechar</button>
+            </div>
+            <pre id="log-content"></pre>
+        </section>
+
+        <section class="card table-wrapper">
+            <div class="section-header">
+                <h3>Bancos PostgreSQL</h3>
+                <span>{{ metrics.postgres.databases | length }} encontrados</span>
+            </div>
+            {% if metrics.postgres.error %}
+                <p class="error">{{ metrics.postgres.error }}</p>
+            {% elif metrics.postgres.databases %}
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Banco</th>
+                            <th>Tamanho</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for db in metrics.postgres.databases %}
+                            <tr>
+                                <td>{{ db.name }}</td>
+                                <td>{{ db.size }}</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            {% else %}
+                <p class="muted">Nenhum banco encontrado ou acesso negado.</p>
+            {% endif %}
+        </section>
+    {% endif %}
+
+    <footer>
+        <p>Atualização automática a cada 60 segundos</p>
+    </footer>
+
+    <script>
+        const logPanel = document.getElementById('log-viewer');
+        const logTitle = document.getElementById('log-title');
+        const logContent = document.getElementById('log-content');
+        const logClose = document.getElementById('log-close');
+
+        function hydrateProgressBars() {
+            document.querySelectorAll('.progress').forEach((wrapper) => {
+                const value = parseFloat(wrapper.dataset.progress || '0');
+                const bar = wrapper.querySelector('div');
+                if (bar) {
+                    bar.style.width = Math.min(Math.max(value, 0), 100) + '%';
+                }
+            });
+        }
+
+        async function refreshMetrics() {
+            try {
+                const response = await fetch('/api/status');
+                const payload = await response.json();
+                if (payload.status === 'ok') {
+                    window.location.reload();
+                } else {
+                    console.error('Erro ao atualizar métricas', payload.message);
+                }
+            } catch (error) {
+                console.error('Falha ao atualizar métricas', error);
+            }
+        }
+
+        async function callAction(endpoint, button, confirmMessage) {
+            if (confirmMessage && !window.confirm(confirmMessage)) {
+                return;
+            }
+            const original = button.textContent;
+            button.disabled = true;
+            button.textContent = 'Executando...';
+            try {
+                const response = await fetch(endpoint, { method: 'POST' });
+                const payload = await response.json();
+                if (payload.status === 'ok') {
+                    alert('Sucesso: ' + (payload.message || 'comando enviado.'));
+                } else {
+                    alert('Erro: ' + payload.message);
+                }
+            } catch (error) {
+                alert('Falha: ' + error.message);
+            } finally {
+                button.disabled = false;
+                button.textContent = original;
+            }
+        }
+
+        function openLogPanel(title) {
+            if (!logPanel) return;
+            logTitle.textContent = title;
+            logContent.textContent = '';
+            logPanel.classList.remove('hidden');
+        }
+
+        function appendLogChunk(chunk) {
+            if (!logPanel) return;
+            logContent.textContent += chunk;
+            logContent.scrollTop = logContent.scrollHeight;
+        }
+
+        function closeLogPanel() {
+            if (!logPanel) return;
+            logPanel.classList.add('hidden');
+            logContent.textContent = '';
+        }
+
+        logClose?.addEventListener('click', closeLogPanel);
+
+        async function streamLogs(endpoint, payload, button, title) {
+            if (!payload) {
+                alert('Dados insuficientes para a ação.');
+                return;
+            }
+
+            const original = button.textContent;
+            button.disabled = true;
+            button.textContent = 'Executando...';
+
+            openLogPanel(title);
+
+            try {
+                const response = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (!response.ok || !response.body) {
+                    const errorPayload = await response.json().catch(() => ({}));
+                    throw new Error(errorPayload.message || 'Falha ao executar comando');
+                }
+
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+
+                while (true) {
+                    const { value, done } = await reader.read();
+                    if (done) break;
+                    const chunk = decoder.decode(value, { stream: true });
+                    appendLogChunk(chunk);
+                }
+            } catch (error) {
+                appendLogChunk(`\n[erro] ${error.message}\n`);
+                alert('Falha: ' + error.message);
+            } finally {
+                button.disabled = false;
+                button.textContent = original;
+            }
+        }
+
+        function callProjectUpdate(button) {
+            const path = button.dataset.path;
+            if (!path) {
+                alert('Caminho do projeto não identificado.');
+                return;
+            }
+            streamLogs(
+                '/api/actions/update-project/logs',
+                { path },
+                button,
+                `Atualizando ${path}`
+            );
+        }
+
+        function callProjectRestart(button) {
+            const path = button.dataset.path;
+            const command = button.dataset.command;
+            const pid = button.dataset.pid;
+            if (!path || !command || !pid) {
+                alert('Dados insuficientes para reiniciar o processo.');
+                return;
+            }
+            streamLogs(
+                '/api/actions/restart-project/logs',
+                { path, command, pid },
+                button,
+                `Reiniciando PID ${pid}`
+            );
+        }
+
+        // Clone form
+        const cloneForm = document.getElementById('clone-form');
+        const cloneUrl = document.getElementById('clone-url');
+        const cloneFolder = document.getElementById('clone-folder');
+        const btnNovoprojeto = document.getElementById('btn-novo-projeto');
+        const btnCloneSubmit = document.getElementById('btn-clone-submit');
+        const btnCloneCancel = document.getElementById('btn-clone-cancel');
+
+        btnNovoprojeto?.addEventListener('click', () => cloneForm?.classList.toggle('hidden'));
+        btnCloneCancel?.addEventListener('click', () => {
+            cloneForm?.classList.add('hidden');
+            if (cloneUrl) cloneUrl.value = '';
+            if (cloneFolder) cloneFolder.value = '';
+        });
+
+        cloneUrl?.addEventListener('input', () => {
+            const url = cloneUrl.value.trim();
+            if (!cloneFolder.value) {
+                const match = url.match(/\/([^\/]+?)(\.git)?$/);
+                if (match) cloneFolder.value = match[1];
+            }
+        });
+
+        btnCloneSubmit?.addEventListener('click', () => {
+            const repo_url = cloneUrl?.value.trim();
+            const folder_name = cloneFolder?.value.trim();
+            if (!repo_url || !folder_name) {
+                alert('Preencha a URL e o nome da pasta.');
+                return;
+            }
+            streamLogs(
+                '/api/actions/clone-project/logs',
+                { repo_url, folder_name },
+                btnCloneSubmit,
+                `Clonando ${folder_name}`
+            );
+        });
+
+        function callProjectStart(button) {
+            const path = button.dataset.path;
+            const startFile = button.dataset.startFile;
+            if (!path || !startFile) {
+                alert('Caminho ou arquivo de start não identificado.');
+                return;
+            }
+            streamLogs(
+                '/api/actions/start-project/logs',
+                { path, start_file: startFile },
+                button,
+                `Iniciando ${path.split('/').pop()} (${startFile})`
+            );
+        }
+
+        function callProcessLogs(button) {
+            const pid = button.dataset.pid;
+            if (!pid) {
+                alert('PID não identificado.');
+                return;
+            }
+            streamLogs(
+                '/api/actions/process-logs',
+                { pid },
+                button,
+                `Logs em tempo real — PID ${pid}`
+            );
+        }
+
+        hydrateProgressBars();
+        document.querySelectorAll('[data-action="view-logs"]').forEach((button) =>
+            button.addEventListener('click', () => callProcessLogs(button))
+        );
+        document.querySelectorAll('[data-action="start-project"]').forEach((button) =>
+            button.addEventListener('click', () => callProjectStart(button))
+        );
+        document.querySelectorAll('[data-action="update"]').forEach((button) =>
+            button.addEventListener('click', () =>
+                callAction('/api/actions/update', button)
+            )
+        );
+        document.querySelectorAll('[data-action="update-project"]').forEach((button) =>
+            button.addEventListener('click', () => callProjectUpdate(button))
+        );
+        document.querySelectorAll('[data-action="restart"]').forEach((button) =>
+            button.addEventListener('click', () => callProjectRestart(button))
+        );
+        setInterval(refreshMetrics, 60000);
+    </script>
+</body>
+</html>
