@@ -301,6 +301,32 @@
                 <p class="muted">Nenhum banco encontrado ou acesso negado.</p>
             {% endif %}
         </section>
+
+        <section class="card backup-panel">
+            <div class="section-header">
+                <div>
+                    <h3>Backup completo</h3>
+                    <small class="muted">Compacta projetos + dump PostgreSQL em {{ backup_dest_path }}</small>
+                </div>
+                <div class="backup-actions" style="display:flex;gap:.5rem;flex-wrap:wrap;justify-content:flex-end;">
+                    <button class="info" id="btn-backup-download" title="Gera e baixa o arquivo compactado">Criar e baixar</button>
+                </div>
+            </div>
+            <p class="muted" style="margin-bottom:.75rem;">
+                O arquivo final será salvo em <code>{{ backup_dest_path }}</code> com timestamp automático.
+                {% if backup_extra_paths %}
+                    Pastas adicionais: {{ backup_extra_paths | join(', ') }}.
+                {% endif %}
+            </p>
+
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:.5rem;">
+                <strong style="font-size:.9rem;">Backups salvos na VPS</strong>
+                <button class="mini secondary" id="btn-backup-refresh">Atualizar lista</button>
+            </div>
+            <div id="backup-list-container">
+                <p class="muted" id="backup-list-loading">Carregando...</p>
+            </div>
+        </section>
     {% endif %}
 
     <footer>
@@ -620,6 +646,147 @@
         document.querySelectorAll('[data-action="restart"]').forEach((button) =>
             button.addEventListener('click', () => callProjectRestart(button))
         );
+        async function downloadBackup(button) {
+            const original = button.textContent;
+            button.disabled = true;
+            button.textContent = 'Gerando...';
+
+            // Abre painel de log
+            openLogPanel('Criando backup completo...');
+
+            try {
+                // 1. Faz streaming dos logs enquanto gera
+                const response = await fetch('/api/actions/backup/create-stream', { method: 'POST' });
+                if (!response.ok || !response.body) {
+                    const err = await response.json().catch(() => ({}));
+                    throw new Error(err.message || 'Falha ao iniciar backup');
+                }
+
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let lastLine = '';
+
+                while (true) {
+                    const { value, done } = await reader.read();
+                    if (done) break;
+                    const chunk = decoder.decode(value, { stream: true });
+                    appendLogChunk(chunk);
+                    lastLine += chunk;
+                }
+
+                // 2. Extrai o nome do arquivo da última linha FILE:...
+                const match = lastLine.match(/FILE:([^\s\n]+)/);
+                if (!match) throw new Error('Backup gerado mas arquivo não identificado. Verifique os logs acima.');
+
+                const filename = match[1].split('/').pop();
+                appendLogChunk(`\n✓ Backup pronto! Iniciando download de ${filename}...\n`);
+
+                // 3. Dispara download direto (navegador abre "Salvar como")
+                const link = document.createElement('a');
+                link.href = `/api/actions/backup/download-existing?filename=${encodeURIComponent(filename)}`;
+                link.download = filename;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+
+                await loadBackupList();
+            } catch (error) {
+                appendLogChunk(`\n[erro] ${error.message}\n`);
+                alert('Falha: ' + error.message);
+            } finally {
+                button.disabled = false;
+                button.textContent = original;
+            }
+        }
+
+        document.getElementById('btn-backup-download')?.addEventListener('click', (event) => {
+            downloadBackup(event.currentTarget);
+        });
+
+        // ── Gerenciador de backups existentes ──────────────────────────
+        async function loadBackupList() {
+            const container = document.getElementById('backup-list-container');
+            const loading = document.getElementById('backup-list-loading');
+            if (loading) loading.textContent = 'Carregando...';
+
+            try {
+                const response = await fetch('/api/actions/backup/list');
+                const payload = await response.json();
+
+                if (payload.status !== 'ok') {
+                    container.innerHTML = `<p class="error">Erro: ${payload.message}</p>`;
+                    return;
+                }
+
+                if (!payload.backups || payload.backups.length === 0) {
+                    container.innerHTML = '<p class="muted">Nenhum backup encontrado na VPS.</p>';
+                    return;
+                }
+
+                const rows = payload.backups.map(b => `
+                    <tr>
+                        <td style="word-break:break-all;"><code>${b.filename}</code></td>
+                        <td style="white-space:nowrap;">${b.size}</td>
+                        <td style="white-space:nowrap;">${b.created_at}</td>
+                        <td>
+                            <div class="row-actions">
+                                <button class="mini info" onclick="downloadExistingBackup('${b.filename}', this)">Baixar</button>
+                                <button class="mini danger" onclick="deleteBackup('${b.filename}', this)">Excluir</button>
+                            </div>
+                        </td>
+                    </tr>
+                `).join('');
+
+                container.innerHTML = `
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Arquivo</th>
+                                <th>Tamanho</th>
+                                <th>Data</th>
+                                <th>Ações</th>
+                            </tr>
+                        </thead>
+                        <tbody>${rows}</tbody>
+                    </table>
+                `;
+            } catch (err) {
+                container.innerHTML = `<p class="error">Falha ao carregar lista: ${err.message}</p>`;
+            }
+        }
+
+        function downloadExistingBackup(filename, button) {
+            const link = document.createElement('a');
+            link.href = `/api/actions/backup/download-existing?filename=${encodeURIComponent(filename)}`;
+            link.download = filename;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        }
+
+        async function deleteBackup(filename, button) {
+            if (!confirm(`Excluir o backup "${filename}" da VPS? Esta ação não pode ser desfeita.`)) return;
+            const original = button.textContent;
+            button.disabled = true;
+            button.textContent = 'Excluindo...';
+            try {
+                const response = await fetch(`/api/actions/backup/delete?filename=${encodeURIComponent(filename)}`, { method: 'DELETE' });
+                const payload = await response.json();
+                if (payload.status !== 'ok') throw new Error(payload.message);
+                await loadBackupList();
+            } catch (err) {
+                alert('Falha: ' + err.message);
+                button.disabled = false;
+                button.textContent = original;
+            }
+        }
+
+        document.getElementById('btn-backup-refresh')?.addEventListener('click', loadBackupList);
+
+        // Carrega lista ao abrir a página
+        loadBackupList();
+        // ───────────────────────────────────────────────────────────────
+
         setInterval(refreshMetrics, 60000);
     </script>
 </body>

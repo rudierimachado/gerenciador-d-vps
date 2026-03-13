@@ -49,6 +49,14 @@ APP_GIT_PATH = os.getenv("APP_GIT_PATH")
 APP_UPDATE_COMMAND = os.getenv("APP_UPDATE_COMMAND")
 APP_RESTART_COMMAND = os.getenv("APP_RESTART_COMMAND")
 PROJECTS_BASE_PATH = os.getenv("PROJECTS_BASE_PATH", "/root")
+DEFAULT_POSTGRES_BACKUP_CMD = "sudo -u postgres pg_dumpall --clean --if-exists"
+POSTGRES_BACKUP_CMD = os.getenv("POSTGRES_BACKUP_CMD", DEFAULT_POSTGRES_BACKUP_CMD)
+BACKUP_DEST_PATH = os.getenv("BACKUP_DEST_PATH", "/root/backups")
+BACKUP_EXTRA_PATHS = [
+    path.strip()
+    for path in os.getenv("BACKUP_EXTRA_PATHS", "").split(",")
+    if path.strip()
+]
 ADMIN_USER = os.getenv("admin")
 ADMIN_PASSWORD = os.getenv("senha")
 app.secret_key = os.getenv("SECRET_KEY") or (ADMIN_PASSWORD or "monitor").encode()
@@ -58,6 +66,12 @@ def _calc_percent(used: int, total: int) -> float:
     if not total:
         return 0.0
     return round((used / total) * 100, 2)
+
+
+def _sanitize_archive_name(path: str, fallback: str = "dir") -> str:
+    base = posixpath.basename(path.rstrip("/")) or fallback
+    slug = re.sub(r"[^a-zA-Z0-9_-]", "_", base)
+    return slug or fallback
 
 
 def _ensure_config():
@@ -104,9 +118,10 @@ def _run_command(
 
     error = stderr.read().decode("utf-8").strip()
     output = "\n".join(output_chunks).strip()
-    if error and not output:
-        raise RuntimeError(f"Command '{command}' failed: {error}")
-    return output if output else error
+    # Inclui stderr na saída para debug completo
+    if error:
+        output = f"{output}\n[stderr]\n{error}" if output else error
+    return output
 
 
 def _serialize_ssh_info() -> Dict[str, object]:
@@ -410,6 +425,196 @@ def _run_remote_shell(command: str, timeout: int = 30) -> str:
         client.close()
 
 
+def _build_backup_script() -> str:
+    if not BACKUP_DEST_PATH:
+        raise ValueError("BACKUP_DEST_PATH não configurado")
+    if not BACKUP_DEST_PATH.startswith("/"):
+        raise ValueError("BACKUP_DEST_PATH deve ser um caminho absoluto")
+
+    target_paths = []
+    if PROJECTS_BASE_PATH:
+        target_paths.append(PROJECTS_BASE_PATH)
+    target_paths.extend(BACKUP_EXTRA_PATHS)
+
+    if not target_paths:
+        raise ValueError("Nenhum diretório configurado para backup")
+
+    import os as _os
+
+    sections = []
+    for idx, path in enumerate(target_paths, start=1):
+        if not path.startswith("/"):
+            raise ValueError(f"Caminho de backup deve ser absoluto: {path}")
+        safe_path = shlex.quote(path)
+        archive_name = _sanitize_archive_name(path, f"dir_{idx}")
+
+        # Calcula excludes em Python: exclui BACKUP_DEST_PATH se estiver dentro de path
+        excludes_args = ""
+        try:
+            rel = _os.path.relpath(BACKUP_DEST_PATH, path)
+            if not rel.startswith(".."):
+                excludes_args = f"--exclude=./{rel}"
+        except ValueError:
+            pass
+
+        sections.append(
+            "\n".join(
+                [
+                    f"if [ -d {safe_path} ]; then",
+                    f'    echo "$LOG_PREFIX Compactando {safe_path} (excluindo destino de backup)..."',
+                    f'    tar -czf "$TMP_DIR/{archive_name}.tar.gz" -C {safe_path} {excludes_args} .',
+                    "else",
+                    f'    echo "$LOG_PREFIX Aviso: diretório não encontrado: {safe_path}"',
+                    "fi",
+                ]
+            )
+        )
+
+    script = f"""
+set -euo pipefail
+LOG_PREFIX="[backup]"
+TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+BACKUP_DEST={shlex.quote(BACKUP_DEST_PATH)}
+PG_CMD={shlex.quote(POSTGRES_BACKUP_CMD)}
+
+echo "$LOG_PREFIX Iniciando backup em $(date '+%Y-%m-%d %H:%M:%S')"
+mkdir -p "$BACKUP_DEST"
+
+# Limpa pastas temporarias antigas de backups anteriores que nao foram removidas
+echo "$LOG_PREFIX Limpando temporarios antigos..."
+find "$BACKUP_DEST" -maxdepth 1 -name 'tmp_*' -type d -exec rm -rf {{}} + 2>/dev/null || true
+
+TMP_DIR=$(mktemp -d "$BACKUP_DEST/tmp_${{TIMESTAMP}}_XXXX")
+PG_DUMP_FILE="$TMP_DIR/postgres.sql"
+
+# Garante limpeza do tmp mesmo em caso de erro
+cleanup() {{
+    rm -rf "$TMP_DIR" 2>/dev/null || true
+}}
+trap cleanup EXIT
+
+{os.linesep.join(sections)}
+
+echo "$LOG_PREFIX Exportando bancos PostgreSQL..."
+if ! eval "$PG_CMD" > "$PG_DUMP_FILE"; then
+    echo "$LOG_PREFIX ERRO: falha ao executar dump do PostgreSQL." >&2
+    exit 1
+fi
+echo "$LOG_PREFIX Dump PostgreSQL salvo ($(du -sh "$PG_DUMP_FILE" | cut -f1))."
+
+FINAL_FILE="$BACKUP_DEST/vps_backup_${{TIMESTAMP}}.tar.gz"
+echo "$LOG_PREFIX Empacotando tudo em $FINAL_FILE..."
+tar -czf "$FINAL_FILE" -C "$TMP_DIR" .
+chmod 600 "$FINAL_FILE"
+SIZE=$(du -h "$FINAL_FILE" | cut -f1)
+echo "$LOG_PREFIX Backup pronto: $FINAL_FILE (tamanho $SIZE)"
+echo "$LOG_PREFIX FILE:$FINAL_FILE"
+""".strip()
+
+    return f"bash -lc {shlex.quote(script)}"
+
+
+def _extract_backup_file_path(output: str) -> str:
+    # Verifica se há erro de espaço em disco
+    if "No space left on device" in output:
+        raise RuntimeError("Disco cheio! Não há espaço suficiente para criar o backup. Libere espaço no servidor antes de tentar novamente.")
+
+    # Tenta múltiplos padrões para capturar o arquivo
+    patterns = [
+        r"\[backup\]\s+FILE:(.+)",  # Padrão original
+        r"Backup pronto: (.+)\s+\(tamanho",  # Padrão alternativo da linha de sucesso
+        r"FINAL_FILE=([^\s]+)",  # Padrão do próprio script
+    ]
+
+    for pattern in patterns:
+        match = re.search(pattern, output)
+        if match:
+            return match.group(1).strip()
+
+    # Se não encontrar, levanta erro com parte da saída para debug
+    # Extrai apenas stderr se existir
+    stderr_match = re.search(r"\[stderr\]\n(.+)", output, re.DOTALL)
+    if stderr_match:
+        stderr_content = stderr_match.group(1).strip()
+        raise RuntimeError(f"O backup falhou. Erro do servidor:\n{stderr_content}")
+
+    raise RuntimeError(
+        f"Não foi possível identificar o arquivo gerado. Saída: {output[:500]}"
+    )
+
+
+def _list_backups(client: paramiko.SSHClient) -> List[Dict]:
+    safe_dest = shlex.quote(BACKUP_DEST_PATH)
+    cmd = (
+        f"for f in {safe_dest}/vps_backup_*.tar.gz; do "
+        "[ -f \"$f\" ] && echo \"$f|$(stat -c '%s|%Y' \"$f\" 2>/dev/null || echo '0|0')\"; "
+        "done | sort -t'|' -k3 -rn 2>/dev/null || true"
+    )
+    raw = _run_command(client, cmd, timeout=15).strip()
+    backups = []
+    for line in raw.splitlines():
+        if not line.strip():
+            continue
+        parts = line.split("|")
+        if len(parts) < 3:
+            continue
+        path, size_bytes, mtime = parts[0], parts[1], parts[2]
+        try:
+            size_int = int(size_bytes)
+            mtime_int = int(float(mtime))
+        except ValueError:
+            continue
+        # tamanho humano
+        for unit in ["B", "KB", "MB", "GB"]:
+            if size_int < 1024:
+                size_human = f"{size_int:.1f} {unit}"
+                break
+            size_int /= 1024
+        else:
+            size_human = f"{size_int:.1f} GB"
+
+        filename = posixpath.basename(path)
+        from datetime import timezone as _tz
+        backups.append({
+            "filename": filename,
+            "path": path,
+            "size": size_human,
+            "created_at": datetime.fromtimestamp(mtime_int, tz=_tz.utc).strftime("%Y-%m-%d %H:%M:%S") + " UTC",
+        })
+    return backups
+
+
+def _build_backup_download_response() -> Response:
+    command = _build_backup_script()
+    client = _get_ssh_client()
+    try:
+        output = _run_command(client, command, timeout=900)
+        remote_path = _extract_backup_file_path(output)
+        filename = posixpath.basename(remote_path.rstrip("/")) or "backup.tar.gz"
+        sftp = client.open_sftp()
+        remote_file = sftp.open(remote_path, "rb")
+
+        def generate():
+            try:
+                while True:
+                    chunk = remote_file.read(32768)
+                    if not chunk:
+                        break
+                    yield chunk
+            finally:
+                remote_file.close()
+                sftp.close()
+                client.close()
+
+        response = Response(stream_with_context(generate()), mimetype="application/gzip")
+        response.headers["Content-Disposition"] = f'attachment; filename="{filename}"'
+        response.headers["X-Accel-Buffering"] = "no"
+        return response
+    except Exception:
+        client.close()
+        raise
+
+
 def _build_update_command() -> str:
     if APP_UPDATE_COMMAND:
         return APP_UPDATE_COMMAND
@@ -619,6 +824,8 @@ def dashboard():
             metrics=metrics,
             vps_identifier=VPS_IDENTIFIER,
             ssh_info=_serialize_ssh_info(),
+            backup_dest_path=BACKUP_DEST_PATH,
+            backup_extra_paths=BACKUP_EXTRA_PATHS,
             error=None,
         )
     except Exception as exc:  # pylint: disable=broad-except
@@ -627,6 +834,8 @@ def dashboard():
             metrics=None,
             vps_identifier=VPS_IDENTIFIER,
             ssh_info=_serialize_ssh_info(),
+            backup_dest_path=BACKUP_DEST_PATH,
+            backup_extra_paths=BACKUP_EXTRA_PATHS,
             error=str(exc),
         ), 500
 
@@ -665,6 +874,136 @@ def api_update_project_logs():
         command,
         intro=f"Atualizando projeto {system_path}",
     )
+
+
+
+@app.get("/api/actions/backup/list")
+@login_required
+def api_backup_list():
+    client = _get_ssh_client()
+    try:
+        backups = _list_backups(client)
+        return jsonify({"status": "ok", "backups": backups})
+    except Exception as exc:  # pylint: disable=broad-except
+        return jsonify({"status": "error", "message": str(exc)}), 500
+    finally:
+        client.close()
+
+
+@app.get("/api/actions/backup/debug")
+@login_required
+def api_backup_debug():
+    client = _get_ssh_client()
+    try:
+        safe_dest = shlex.quote(BACKUP_DEST_PATH)
+        raw_ls = _run_command(client, f"ls -lah {safe_dest} 2>&1 || echo 'ERRO: pasta nao existe'", timeout=10)
+        raw_df = _run_command(client, "df -h / /tmp 2>&1", timeout=10)
+        return jsonify({"ls": raw_ls, "df": raw_df, "backup_dest": BACKUP_DEST_PATH})
+    finally:
+        client.close()
+
+
+@app.delete("/api/actions/backup/delete")
+@login_required
+def api_backup_delete():
+    filename = request.args.get("filename", "").strip()
+    if not filename or not re.match(r'^vps_backup_[\w]+\.tar\.gz$', filename):
+        return jsonify({"status": "error", "message": "Nome de arquivo inválido"}), 400
+    safe_path = shlex.quote(posixpath.join(BACKUP_DEST_PATH, filename))
+    client = _get_ssh_client()
+    try:
+        _run_command(client, f"rm -f {safe_path}", timeout=15)
+        return jsonify({"status": "ok", "message": f"{filename} removido."})
+    except Exception as exc:  # pylint: disable=broad-except
+        return jsonify({"status": "error", "message": str(exc)}), 500
+    finally:
+        client.close()
+
+
+@app.get("/api/actions/backup/download-existing")
+@login_required
+def api_backup_download_existing():
+    filename = request.args.get("filename", "").strip()
+    if not filename or not re.match(r'^vps_backup_[\w]+\.tar\.gz$', filename):
+        return jsonify({"status": "error", "message": "Nome de arquivo inválido"}), 400
+    remote_path = posixpath.join(BACKUP_DEST_PATH, filename)
+    client = _get_ssh_client()
+    try:
+        sftp = client.open_sftp()
+        try:
+            sftp.stat(remote_path)
+        except FileNotFoundError:
+            sftp.close()
+            client.close()
+            return jsonify({"status": "error", "message": "Arquivo não encontrado na VPS"}), 404
+        remote_file = sftp.open(remote_path, "rb")
+
+        def generate():
+            try:
+                while True:
+                    chunk = remote_file.read(32768)
+                    if not chunk:
+                        break
+                    yield chunk
+            finally:
+                remote_file.close()
+                sftp.close()
+                client.close()
+
+        response = Response(stream_with_context(generate()), mimetype="application/gzip")
+        response.headers["Content-Disposition"] = f'attachment; filename="{filename}"'
+        response.headers["X-Accel-Buffering"] = "no"
+        return response
+    except Exception:
+        client.close()
+        raise
+
+
+@app.post("/api/actions/backup/create-stream")
+@login_required
+def api_backup_create_stream():
+    """Executa o backup com streaming de logs em tempo real. Última linha contém FILE:<caminho>."""
+    try:
+        command = _build_backup_script()
+    except ValueError as exc:
+        return jsonify({"status": "error", "message": str(exc)}), 400
+
+    return _stream_remote_command(
+        command,
+        intro="[backup] Iniciando backup completo (projetos + PostgreSQL)...",
+        timeout=900,
+    )
+
+
+@app.post("/api/actions/backup/create")
+@login_required
+def api_backup_create():
+    """Gera o backup na VPS e retorna o nome do arquivo gerado."""
+    try:
+        command = _build_backup_script()
+    except ValueError as exc:
+        return jsonify({"status": "error", "message": str(exc)}), 400
+    client = _get_ssh_client()
+    try:
+        output = _run_command(client, command, timeout=900)
+        remote_path = _extract_backup_file_path(output)
+        filename = posixpath.basename(remote_path.rstrip("/"))
+        return jsonify({"status": "ok", "filename": filename})
+    except Exception as exc:  # pylint: disable=broad-except
+        return jsonify({"status": "error", "message": str(exc)}), 500
+    finally:
+        client.close()
+
+
+@app.get("/api/actions/backup/download")
+@login_required
+def api_backup_download():
+    try:
+        return _build_backup_download_response()
+    except ValueError as exc:
+        return jsonify({"status": "error", "message": str(exc)}), 400
+    except Exception as exc:  # pylint: disable=broad-except
+        return jsonify({"status": "error", "message": str(exc)}), 500
 
 
 @app.post("/api/actions/restart-project/logs")

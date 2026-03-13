@@ -3,7 +3,11 @@
     "allow": [
       "Bash(pip install flask-sock==0.7.0)",
       "Bash(pip install gevent)",
-      "Bash(pip install gevent-websocket)"
+      "Bash(pip install gevent-websocket)",
+      "Bash(python3 -c \":*)",
+      "Bash(py --version)",
+      "Bash(where python:*)",
+      "Bash(where py:*)"
     ]
   }
 }
